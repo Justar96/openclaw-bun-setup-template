@@ -10,7 +10,8 @@ RUN apt-get update \
     python3 \
     make \
     g++ \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g pnpm
 
 COPY package.json bun.lock tsconfig.json ./
 COPY scripts ./scripts

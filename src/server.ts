@@ -635,7 +635,7 @@ app.post("/setup/import", requireSetupAuth, async (req: Request, res: Response):
       onwarn: () => {},
       filter: (p: string, entry) => {
         if (!looksSafeTarPath(p)) return false;
-        const type = entry?.type;
+        const type = (entry as { type?: string })?.type;
         return type === "File" || type === "Directory";
       },
     });

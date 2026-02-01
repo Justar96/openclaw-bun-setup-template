@@ -13,7 +13,6 @@ import {
   isConfigured,
   OPENCLAW_GATEWAY_TOKEN,
   OPENCLAW_NODE,
-  STATE_DIR,
 } from "./config.js";
 
 const state: GatewayState = {
