@@ -10,6 +10,8 @@ RUN apt-get update \
     python3 \
     make \
     g++ \
+    nodejs \
+    npm \
   && rm -rf /var/lib/apt/lists/* \
   && npm install -g pnpm
 
