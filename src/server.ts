@@ -22,7 +22,7 @@ import type {
   TelegramConfig,
 } from "./types.js";
 
-import { isUnderDir, looksSafeTarPath, parseCommaSeparated, readBodyBuffer, redactSecrets } from "./utils.js";
+import { isUnderDir, looksSafeTarPath, readBodyBuffer, redactSecrets } from "./utils.js";
 
 import {
   ALLOWED_CONSOLE_COMMANDS,
@@ -82,22 +82,6 @@ function safeEqual(a: string, b: string): boolean {
   const bBuf = Buffer.from(b);
   if (aBuf.length !== bBuf.length) return false;
   return crypto.timingSafeEqual(aBuf, bBuf);
-}
-
-function parseBooleanFlag(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined || value === null) return fallback;
-  const normalized = String(value).trim().toLowerCase();
-  if (!normalized) return fallback;
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-function parsePositiveInt(value: string | number | undefined, fallback: number, min = 1, max = 1000): number {
-  if (value === undefined || value === null) return fallback;
-  const parsed = typeof value === "number" ? value : Number.parseInt(String(value), 10);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.min(Math.max(parsed, min), max);
 }
 
 function sendUiFile(res: Response, fileName: string, contentType: string): void {
@@ -209,6 +193,8 @@ app.post("/setup/api/run", requireSetupAuth, async (req: Request, res: Response)
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      // Trust Railway's internal proxy network (CGNAT range) for forwarded headers.
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", '["100.64.0.0/10", "127.0.0.1"]']));
 
       const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";
@@ -280,46 +266,17 @@ async function configureDiscord(
   }
 
   const token = payload.discordToken!.trim();
-  const dmPolicy = payload.discordDmPolicy?.trim() || "pairing";
-  const historyLimit = parsePositiveInt(payload.discordHistoryLimit, 20, 1, 1000);
-  const commandsNative = parseBooleanFlag(payload.discordNativeCommands, true);
-  const dmEnabled = parseBooleanFlag(payload.discordDmEnabled, true);
-
+  
+  // Use simple config matching the original template - just token and pairing mode.
+  // This avoids validation issues with complex DM policy settings.
   const cfgObj: DiscordConfig = {
     enabled: true,
     token,
-    groupPolicy: payload.discordGroupPolicy?.trim() || "allowlist",
-    historyLimit,
-    streamMode: payload.discordStreamMode?.trim() || "partial",
-    commands: { native: commandsNative },
+    groupPolicy: "allowlist",
     dm: {
-      enabled: dmEnabled,
-      policy: dmPolicy,
+      policy: "pairing",
     },
   };
-
-  // Add an optional guild allowlist.
-  if (payload.discordGuildId?.trim()) {
-    const guildId = payload.discordGuildId.trim();
-    cfgObj.guilds = {
-      [guildId]: {
-        enabled: true,
-        requireMention: parseBooleanFlag(payload.discordRequireMention, false),
-      },
-    };
-    if (payload.discordChannelId?.trim()) {
-      cfgObj.guilds[guildId].channels = {
-        [payload.discordChannelId.trim()]: { enabled: true },
-      };
-    }
-  }
-
-  // Add DM allowlist entries when policy requires them.
-  if (dmPolicy === "open") {
-    cfgObj.dm.allowFrom = ["*"];
-  } else if (dmPolicy === "allowlist" && payload.discordAllowFrom?.trim()) {
-    cfgObj.dm.allowFrom = parseCommaSeparated(payload.discordAllowFrom);
-  }
 
   const set = await runCmd(
     OPENCLAW_NODE,

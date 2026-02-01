@@ -70,13 +70,13 @@ export interface DiscordConfig {
   enabled: boolean;
   token: string;
   groupPolicy: string;
-  historyLimit: number;
-  streamMode: string;
-  commands: {
+  historyLimit?: number;
+  streamMode?: string;
+  commands?: {
     native: boolean;
   };
   dm: {
-    enabled: boolean;
+    enabled?: boolean;
     policy: string;
     allowFrom?: string[];
   };
