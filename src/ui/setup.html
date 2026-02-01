@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="OpenClaw Configuration Interface - Setup and manage your AI assistant" />
+  <title>OpenClaw Setup</title>
+  <link rel="stylesheet" href="/setup/ui/styles.css" />
+</head>
+<body>
+  <!-- Skip Navigation Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+  
+  <div class="container">
+    <!-- Header -->
+    <header class="header" role="banner">
+      <h1>OPENCLAW SYSTEM — CONFIGURATION INTERFACE</h1>
+      <nav class="header-links" aria-label="Quick actions">
+        <a href="/openclaw" target="_blank" rel="noopener noreferrer" aria-label="Open Control UI in new tab">Control UI</a>
+        <a href="/setup/export" aria-label="Export configuration">Export</a>
+      </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main id="main-content" class="main-layout">
+      <!-- Status Card -->
+      <aside class="sidebar">
+        <div class="card status-card">
+          <h2>SYSTEM STATUS</h2>
+          <div id="statusBadge" class="status-badge loading" role="status" aria-live="polite">
+            <span class="wave-loader" aria-hidden="true">
+              <span class="bar"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
+            </span>
+            <span class="status-text">Loading</span>
+          </div>
+        </div>
+        
+        <!-- Quick Help -->
+        <div class="card help-card">
+          <h2>QUICK HELP</h2>
+          <ul class="help-list">
+            <li><strong>Setup:</strong> Configure AI provider &amp; channels</li>
+            <li><strong>Pairing:</strong> Approve user access codes</li>
+            <li><strong>Config:</strong> Edit raw configuration</li>
+            <li><strong>Console:</strong> Run diagnostic commands</li>
+            <li><strong>Backup:</strong> Export/import settings</li>
+          </ul>
+        </div>
+      </aside>
+
+      <!-- Main Tabs -->
+      <div class="card main-card">
+      <div class="tabs" role="tablist" aria-label="Configuration sections">
+        <button class="tab active" data-tab="setup" role="tab" aria-selected="true" aria-controls="tab-setup" id="tab-btn-setup">Setup</button>
+        <button class="tab" data-tab="pairing" role="tab" aria-selected="false" aria-controls="tab-pairing" id="tab-btn-pairing">Pairing</button>
+        <button class="tab" data-tab="config" role="tab" aria-selected="false" aria-controls="tab-config" id="tab-btn-config">Config</button>
+        <button class="tab" data-tab="console" role="tab" aria-selected="false" aria-controls="tab-console" id="tab-btn-console">Console</button>
+        <button class="tab" data-tab="backup" role="tab" aria-selected="false" aria-controls="tab-backup" id="tab-btn-backup">Backup</button>
+      </div>
+
+      <!-- Setup Tab -->
+      <div id="tab-setup" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-setup">
+        <p class="card-muted">Configure your AI provider and messaging channels. After setup, approve users via the Pairing tab.</p>
+
+        <!-- Model/Auth Provider -->
+        <fieldset class="collapsible open" id="authSection">
+          <legend class="visually-hidden">Model and Authentication Provider</legend>
+          <button class="collapsible-toggle" type="button" aria-expanded="true" aria-controls="authSection-content">
+            <span class="arrow" aria-hidden="true">▶</span> 1. Model / Auth Provider
+          </button>
+          <div class="collapsible-content" id="authSection-content">
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="authGroup">Provider group</label>
+                <select id="authGroup" aria-describedby="authGroup-hint"></select>
+                <span id="authGroup-hint" class="field-hint">Select your AI provider</span>
+              </div>
+
+              <div class="form-field">
+                <label for="authChoice">Auth method</label>
+                <select id="authChoice"></select>
+              </div>
+
+              <div class="form-field">
+                <label for="authSecret">Key / Token (if required)</label>
+                <input id="authSecret" type="password" placeholder="Paste API key or token" autocomplete="off" />
+              </div>
+
+              <div class="form-field">
+                <label for="flow">Wizard flow</label>
+                <select id="flow">
+                  <option value="quickstart">quickstart</option>
+                  <option value="advanced">advanced</option>
+                  <option value="manual">manual</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Channels -->
+        <fieldset class="collapsible" id="channelsSection">
+          <legend class="visually-hidden">Messaging Channels Configuration</legend>
+          <button class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="channelsSection-content">
+            <span class="arrow" aria-hidden="true">▶</span> 2. Channels (optional)
+          </button>
+          <div class="collapsible-content" id="channelsSection-content">
+            <p class="text-muted text-sm mb-3">Add messaging channels now or later via the Control UI.</p>
+
+            <div class="channel-grid">
+              <!-- Telegram -->
+              <div class="channel-section">
+                <h4 class="channel-title">Telegram</h4>
+                <div class="form-field">
+                  <label for="telegramToken">Bot token</label>
+                  <input id="telegramToken" type="password" placeholder="123456:ABC..." autocomplete="off" aria-describedby="telegram-hint" />
+                  <span id="telegram-hint" class="field-hint">Get from <code>@BotFather</code> → <code>/newbot</code></span>
+                </div>
+              </div>
+
+              <!-- Discord -->
+              <div class="channel-section">
+                <h4 class="channel-title">Discord</h4>
+                <div class="form-field">
+                  <label for="discordToken">Bot token</label>
+                  <input id="discordToken" type="password" placeholder="Bot token from Developer Portal" autocomplete="off" />
+                </div>
+                <div class="alert alert-warning mt-2" role="alert">
+                  <strong>Required:</strong> Enable <strong>MESSAGE CONTENT INTENT</strong> and <strong>SERVER MEMBERS INTENT</strong> in Bot → Privileged Gateway Intents
+                </div>
+              </div>
+            </div>
+
+            <!-- Discord Advanced -->
+            <fieldset class="collapsible mt-3" id="discordAdvanced">
+              <legend class="visually-hidden">Discord Advanced Options</legend>
+              <button class="collapsible-toggle" type="button" aria-expanded="false" aria-controls="discordAdvanced-content">
+                <span class="arrow" aria-hidden="true">▶</span> Discord Advanced Options
+              </button>
+              <div class="collapsible-content" id="discordAdvanced-content">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="discordDmPolicy">DM policy</label>
+                    <select id="discordDmPolicy">
+                      <option value="pairing">pairing (approve each user)</option>
+                      <option value="allowlist">allowlist (specific users)</option>
+                      <option value="open">open (anyone)</option>
+                      <option value="disabled">disabled (no DMs)</option>
+                    </select>
+                  </div>
+                  <div class="form-field">
+                    <label for="discordStreamMode">Stream mode</label>
+                    <select id="discordStreamMode">
+                      <option value="partial">partial (streaming)</option>
+                      <option value="full">full (wait for complete)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="form-field">
+                  <label for="discordAllowFrom">DM allow list (comma-separated user IDs)</label>
+                  <input id="discordAllowFrom" placeholder="123456789, 987654321" aria-describedby="allowfrom-hint" />
+                  <span id="allowfrom-hint" class="field-hint">Only applies when DM policy is "allowlist"</span>
+                </div>
+
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="discordGuildId">Guild/Server ID</label>
+                    <input id="discordGuildId" placeholder="Right-click server → Copy ID" />
+                  </div>
+                  <div class="form-field">
+                    <label for="discordChannelId">Channel ID (optional)</label>
+                    <input id="discordChannelId" placeholder="Restrict to channel" />
+                  </div>
+                </div>
+
+                <div class="form-field">
+                  <label for="discordHistoryLimit">History limit</label>
+                  <input id="discordHistoryLimit" type="number" value="20" min="0" max="100" aria-describedby="history-hint" />
+                  <span id="history-hint" class="field-hint">Number of messages to include in context</span>
+                </div>
+
+                <div class="checkbox-group">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="discordRequireMention" />
+                    <span>Require @mention in guild channels</span>
+                  </label>
+
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="discordNativeCommands" checked />
+                    <span>Enable native slash commands</span>
+                  </label>
+                </div>
+              </div>
+            </fieldset>
+
+            <!-- Slack -->
+            <div class="channel-section mt-4">
+              <h4 class="channel-title">Slack</h4>
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="slackBotToken">Bot token</label>
+                  <input id="slackBotToken" type="password" placeholder="xoxb-..." autocomplete="off" />
+                </div>
+                <div class="form-field">
+                  <label for="slackAppToken">App token</label>
+                  <input id="slackAppToken" type="password" placeholder="xapp-..." autocomplete="off" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Run Setup -->
+        <div class="btn-group mt-4">
+          <button id="runSetup" class="btn btn-primary">Run Setup</button>
+          <button id="resetSetup" class="btn btn-secondary">Reset</button>
+        </div>
+
+        <pre id="setupLog" style="display:none"></pre>
+      </div>
+
+      <!-- Pairing Tab -->
+      <div id="tab-pairing" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-pairing">
+        <p class="card-muted">When DM policy is <code>pairing</code>, users receive an 8-character code. Approve them here.</p>
+
+        <div class="action-bar">
+          <button id="pairingRefresh" class="btn btn-primary" aria-label="Refresh pairing requests">Refresh</button>
+          <label class="checkbox-label inline-checkbox">
+            <input type="checkbox" id="pairingAutoRefresh" />
+            <span>Auto-refresh (10s)</span>
+          </label>
+        </div>
+
+        <div id="pairingList" class="pairing-list" role="list" aria-label="Pending pairing requests">
+          <div class="pairing-empty">Click refresh to load pending requests</div>
+        </div>
+
+        <!-- Manual Approval -->
+        <div class="manual-approval">
+          <h3 class="section-subtitle">Manual approval</h3>
+          <div class="form-row">
+            <div class="form-field">
+              <label for="pairingChannel">Channel</label>
+              <select id="pairingChannel">
+                <option value="discord">Discord</option>
+                <option value="telegram">Telegram</option>
+                <option value="slack">Slack</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="signal">Signal</option>
+                <option value="imessage">iMessage</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="pairingCode">Pairing code</label>
+              <input id="pairingCode" type="text" placeholder="Enter 8-char code" maxlength="8" pattern="[A-Za-z0-9]{8}" />
+            </div>
+            <button id="pairingApprove" class="btn btn-success align-end" aria-label="Approve pairing code">Approve</button>
+          </div>
+          <pre id="pairingOut" class="output-log" style="display:none" aria-live="polite"></pre>
+        </div>
+      </div>
+
+      <!-- Config Tab -->
+      <div id="tab-config" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-config">
+        <p class="card-muted">Edit the raw config file (JSON5). Changes restart the gateway automatically.</p>
+
+        <div id="configPath" class="config-path"></div>
+        <div class="form-field">
+          <label for="configText" class="visually-hidden">Configuration JSON</label>
+          <textarea id="configText" placeholder="Loading..." aria-describedby="config-hint" spellcheck="false"></textarea>
+          <span id="config-hint" class="field-hint">JSON5 format supported</span>
+        </div>
+
+        <div class="btn-group">
+          <button id="configReload" class="btn" aria-label="Reload configuration from file">Reload</button>
+          <button id="configSave" class="btn btn-primary" aria-label="Save configuration and restart gateway">Save & Restart</button>
+        </div>
+        <pre id="configOut" class="output-log" style="display:none" aria-live="polite"></pre>
+      </div>
+
+      <!-- Console Tab -->
+      <div id="tab-console" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-console">
+        <p class="card-muted">Run diagnostic commands. Useful for debugging and recovery.</p>
+
+        <div class="console-form">
+          <div class="form-field">
+            <label for="consoleCmd">Command</label>
+            <select id="consoleCmd" aria-describedby="cmd-hint">
+              <option value="gateway.restart">gateway.restart</option>
+              <option value="gateway.stop">gateway.stop</option>
+              <option value="gateway.start">gateway.start</option>
+              <option value="openclaw.status">openclaw status</option>
+              <option value="openclaw.health">openclaw health</option>
+              <option value="openclaw.doctor">openclaw doctor</option>
+              <option value="openclaw.logs.tail">openclaw logs --tail N</option>
+              <option value="openclaw.config.get">openclaw config get &lt;path&gt;</option>
+              <option value="openclaw.pairing.list">openclaw pairing list &lt;channel&gt;</option>
+              <option value="openclaw.version">openclaw --version</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="consoleArg">Argument (optional)</label>
+            <input id="consoleArg" placeholder="e.g. 200, discord" aria-describedby="arg-hint" />
+            <span id="arg-hint" class="field-hint">Required for commands with N or &lt;path&gt;</span>
+          </div>
+          <button id="consoleRun" class="btn btn-primary align-end" aria-label="Run selected command">Run</button>
+        </div>
+        <pre id="consoleOut" class="output-log console-output" aria-live="polite"></pre>
+      </div>
+
+      <!-- Backup Tab -->
+      <div id="tab-backup" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-backup">
+        <p class="card-muted">Export or import your OpenClaw configuration and workspace.</p>
+
+        <div class="backup-grid">
+          <div class="backup-section">
+            <h3 class="section-subtitle">Export</h3>
+            <p class="text-muted">Download a backup of your config, credentials, and workspace.</p>
+            <a href="/setup/export" class="btn btn-primary" aria-label="Download configuration backup">Download Backup</a>
+          </div>
+          <div class="backup-section">
+            <h3 class="section-subtitle">Import</h3>
+            <p class="text-muted">Restore from a backup file (.tar.gz).</p>
+            <div class="form-field">
+              <label for="importFile" class="visually-hidden">Select backup file</label>
+              <input id="importFile" type="file" accept=".tar.gz,application/gzip" aria-describedby="import-hint" />
+              <span id="import-hint" class="field-hint">Only .tar.gz files are accepted</span>
+            </div>
+            <button id="importRun" class="btn btn-danger" aria-label="Import and overwrite current configuration">Import & Overwrite</button>
+            <pre id="importOut" class="output-log" style="display:none" aria-live="polite"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+    </main>
+
+    <!-- Footer -->
+    <footer role="contentinfo">
+      <nav aria-label="Documentation links">
+        <a href="https://docs.openclaw.ai" target="_blank" rel="noopener noreferrer">Documentation</a>
+        <span class="footer-divider" aria-hidden="true">·</span>
+        <a href="https://docs.openclaw.ai/channels/discord" target="_blank" rel="noopener noreferrer">Discord</a>
+        <span class="footer-divider" aria-hidden="true">·</span>
+        <a href="https://docs.openclaw.ai/start/pairing" target="_blank" rel="noopener noreferrer">Pairing</a>
+      </nav>
+    </footer>
+  </div>
+
+  <script src="/setup/ui/app.js"></script>
+</body>
+</html>
