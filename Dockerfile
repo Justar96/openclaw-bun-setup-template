@@ -6,12 +6,13 @@ WORKDIR /app
 RUN apt-get update \
   && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates \
+    curl \
     git \
     python3 \
     make \
     g++ \
-    nodejs \
-    npm \
+  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+  && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/* \
   && npm install -g pnpm
 
