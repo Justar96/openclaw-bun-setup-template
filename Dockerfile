@@ -37,6 +37,7 @@ RUN bun install --frozen-lockfile --production
 
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/openclaw ./openclaw
+COPY --from=build /app/src/ui ./src/ui
 
 ENV PORT=8080
 ENV OPENCLAW_PUBLIC_PORT=8080
