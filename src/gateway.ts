@@ -27,38 +27,6 @@ function mergeEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   };
 }
 
-async function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
-  if (proc.exitCode !== null) return true;
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(false), timeoutMs);
-    proc.once("exit", () => {
-      clearTimeout(timer);
-      resolve(true);
-    });
-    proc.once("error", () => {
-      clearTimeout(timer);
-      resolve(true);
-    });
-  });
-}
-
-async function terminateProcess(proc: ChildProcess, timeoutMs = 2_000): Promise<void> {
-  try {
-    proc.kill("SIGTERM");
-  } catch {
-    // Ignore failures; the process may already be gone.
-  }
-  const exited = await waitForExit(proc, timeoutMs);
-  if (!exited) {
-    try {
-      proc.kill("SIGKILL");
-    } catch {
-      // Ignore if force-kill is not available.
-    }
-    await waitForExit(proc, 1_000);
-  }
-}
-
 /** Return the current gateway child process. */
 export function getGatewayProc(): ChildProcess | null {
   return state.proc;
@@ -122,46 +90,12 @@ async function waitForGatewayReady(opts: WaitForGatewayOptions = {}): Promise<bo
   return false;
 }
 
-/** Configure trusted proxies for Railway's internal network. */
-async function configureTrustedProxies(): Promise<void> {
-  // Railway uses CGNAT range 100.64.0.0/10 for internal routing.
-  // This is optional - the gateway works without it, but logs warnings.
-  const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
-  const proxiesJson = JSON.stringify(trustedProxies);
-  
-  console.log(`[gateway] configuring trustedProxies: ${proxiesJson}`);
-  
-  // Try setting via CLI - if it fails, just log and continue
-  const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
-  if (r1.code !== 0) {
-    console.log(`[gateway] trustedProxies set failed (non-critical): ${r1.output.trim()}`);
-    return;
-  }
-  console.log(`[gateway] trustedProxies set successfully`);
-}
-
-/** Clean up invalid config keys before starting the gateway. */
-async function cleanupInvalidConfigKeys(): Promise<void> {
-  console.log(`[gateway] running doctor --fix to clean up any invalid config keys`);
-  const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor", "--fix"]));
-  if (r.code !== 0) {
-    console.log(`[gateway] doctor --fix exit=${r.code} (may be expected if no issues)`);
-  }
-}
-
 /** Start the gateway process if it is not already running. */
 async function startGateway(): Promise<void> {
   if (state.proc) return;
   if (!isConfigured()) throw new Error("Gateway cannot start: not configured");
 
   ensureDirectories();
-
-  // Clean up any invalid config keys first (e.g., from previous buggy versions)
-  await cleanupInvalidConfigKeys();
-
-  // Optional: configure trustedProxies if not already set
-  // This is a warning-only feature - gateway works without it
-  await configureTrustedProxies();
 
   const args = [
     "gateway",
@@ -174,7 +108,6 @@ async function startGateway(): Promise<void> {
     "token",
     "--token",
     OPENCLAW_GATEWAY_TOKEN,
-    "--force",
   ];
 
   state.proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
@@ -200,18 +133,10 @@ export async function ensureGatewayRunning(): Promise<GatewayResult> {
   
   if (!state.starting) {
     state.starting = (async () => {
-      try {
-        await startGateway();
-        const ready = await waitForGatewayReady({ timeoutMs: 20_000 });
-        if (!ready) {
-          throw new Error("Gateway did not become ready in time");
-        }
-      } catch (err) {
-        if (state.proc) {
-          await terminateProcess(state.proc);
-          state.proc = null;
-        }
-        throw err;
+      await startGateway();
+      const ready = await waitForGatewayReady({ timeoutMs: 20_000 });
+      if (!ready) {
+        throw new Error("Gateway did not become ready in time");
       }
     })().finally(() => {
       state.starting = null;
@@ -225,7 +150,13 @@ export async function ensureGatewayRunning(): Promise<GatewayResult> {
 /** Stop the gateway if running, then restart it. */
 export async function restartGateway(): Promise<GatewayResult> {
   if (state.proc) {
-    await terminateProcess(state.proc);
+    try {
+      state.proc.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    // Give it a moment to exit and release the port.
+    await sleep(750);
     state.proc = null;
   }
   return ensureGatewayRunning();
@@ -234,7 +165,12 @@ export async function restartGateway(): Promise<GatewayResult> {
 /** Stop the gateway if running. */
 export async function stopGateway(): Promise<void> {
   if (state.proc) {
-    await terminateProcess(state.proc);
+    try {
+      state.proc.kill("SIGTERM");
+    } catch {
+      // ignore
+    }
+    await sleep(750);
     state.proc = null;
   }
 }
