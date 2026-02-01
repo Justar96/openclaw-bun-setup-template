@@ -129,6 +129,11 @@ async function startGateway(): Promise<void> {
 
   ensureDirectories();
 
+  // Ensure trustedProxies is set for Railway's proxy network before starting.
+  await runCmd(OPENCLAW_NODE, clawArgs([
+    "config", "set", "--json", "gateway.trustedProxies", '["100.64.0.0/10", "127.0.0.1"]'
+  ]));
+
   const args = [
     "gateway",
     "run",
@@ -140,6 +145,7 @@ async function startGateway(): Promise<void> {
     "token",
     "--token",
     OPENCLAW_GATEWAY_TOKEN,
+    "--force",
   ];
 
   state.proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
