@@ -95,10 +95,10 @@ async function main(): Promise<void> {
   await stageSource();
 
   log("installing OpenClaw dependencies");
-  await run("bun", ["install"], targetDir);
+  await run(process.execPath, ["install"], targetDir);
 
   log("building OpenClaw");
-  await run("bun", ["run", "build"], targetDir);
+  await run(process.execPath, ["run", "build"], targetDir);
 
   await fs.promises.writeFile(markerPath, `${ref}\n`, "utf8");
   if (!await pathExists(entryPath)) {
