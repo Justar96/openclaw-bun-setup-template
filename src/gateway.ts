@@ -125,26 +125,29 @@ async function waitForGatewayReady(opts: WaitForGatewayOptions = {}): Promise<bo
 /** Configure trusted proxies for Railway's internal network. */
 async function configureTrustedProxies(): Promise<void> {
   // Railway uses CGNAT range 100.64.0.0/10 for internal routing.
+  // This is optional - the gateway works without it, but logs warnings.
   const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
   const proxiesJson = JSON.stringify(trustedProxies);
   
   console.log(`[gateway] configuring trustedProxies: ${proxiesJson}`);
   
-  const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
-  if (r.code !== 0) {
-    console.log(`[gateway] trustedProxies set failed (non-critical): ${r.output.trim()}`);
+  // Try setting via CLI - if it fails, just log and continue
+  const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
+  if (r1.code !== 0) {
+    console.log(`[gateway] trustedProxies set failed (non-critical): ${r1.output.trim()}`);
     return;
   }
   console.log(`[gateway] trustedProxies set successfully`);
 }
 
-/** Clean up invalid config keys before starting. */
-async function runDoctorFix(): Promise<void> {
+/** Clean up invalid config keys before starting the gateway. */
+async function cleanupInvalidConfigKeys(): Promise<void> {
   console.log(`[gateway] running doctor --fix to clean up any invalid config keys`);
-  await runCmd(OPENCLAW_NODE, clawArgs(["doctor", "--fix"]));
+  const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor", "--fix"]));
+  if (r.code !== 0) {
+    console.log(`[gateway] doctor --fix exit=${r.code} (may be expected if no issues)`);
+  }
 }
-
-
 
 /** Start the gateway process if it is not already running. */
 async function startGateway(): Promise<void> {
@@ -153,8 +156,11 @@ async function startGateway(): Promise<void> {
 
   ensureDirectories();
 
-  // Clean up and configure before starting
-  await runDoctorFix();
+  // Clean up any invalid config keys first (e.g., from previous buggy versions)
+  await cleanupInvalidConfigKeys();
+
+  // Optional: configure trustedProxies if not already set
+  // This is a warning-only feature - gateway works without it
   await configureTrustedProxies();
 
   const args = [
@@ -168,6 +174,7 @@ async function startGateway(): Promise<void> {
     "token",
     "--token",
     OPENCLAW_GATEWAY_TOKEN,
+    "--force",
   ];
 
   state.proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
