@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse, ClientRequest } from "node:http";
 import type { Socket } from "node:net";
 
 import express, { Request, Response, NextFunction, Application } from "express";
@@ -193,8 +193,16 @@ app.post("/setup/api/run", requireSetupAuth, async (req: Request, res: Response)
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      
       // Trust Railway's internal proxy network (CGNAT range) for forwarded headers.
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", '["100.64.0.0/10", "127.0.0.1"]']));
+      // Include 10.0.0.0/8 for other cloud providers that use private networks.
+      const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
+      const proxiesJson = JSON.stringify(trustedProxies);
+      console.log(`[setup] configuring trustedProxies: ${proxiesJson}`);
+      const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
+      console.log(`[setup] trustedProxies set: exit=${r1.code}`);
+      const r2 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.trustProxy", "true"]));
+      console.log(`[setup] trustProxy set: exit=${r2.code}`);
 
       const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";
@@ -626,6 +634,24 @@ const proxy = httpProxy.createProxyServer({
   target: GATEWAY_TARGET,
   ws: true,
   xfwd: true,
+  changeOrigin: false, // Keep original host header
+});
+
+// Enhance forwarded headers for the gateway.
+proxy.on("proxyReq", (proxyReq: ClientRequest, req: IncomingMessage) => {
+  // Preserve existing X-Forwarded-For or create from connection
+  const existingFwd = req.headers["x-forwarded-for"];
+  const clientIp = typeof existingFwd === "string" 
+    ? existingFwd.split(",")[0].trim() 
+    : req.socket?.remoteAddress || "unknown";
+  
+  // Ensure X-Real-IP is set (many proxies use this)
+  if (!proxyReq.getHeader("x-real-ip")) {
+    proxyReq.setHeader("X-Real-IP", clientIp);
+  }
+  
+  // Mark as coming from trusted internal wrapper
+  proxyReq.setHeader("X-Forwarded-By", "openclaw-wrapper");
 });
 
 proxy.on("error", (err: Error, _req: IncomingMessage, _res: ServerResponse | Socket) => {

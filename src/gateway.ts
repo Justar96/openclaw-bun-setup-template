@@ -6,6 +6,7 @@ import type { CommandResult, GatewayResult, GatewayState, WaitForGatewayOptions 
 import { sleep } from "./utils.js";
 import {
   clawArgs,
+  configPath,
   ensureDirectories,
   getChildEnv,
   GATEWAY_TARGET,
@@ -122,6 +123,60 @@ async function waitForGatewayReady(opts: WaitForGatewayOptions = {}): Promise<bo
   return false;
 }
 
+/** Configure trusted proxies for Railway's internal network. */
+async function configureTrustedProxies(): Promise<void> {
+  // Railway uses CGNAT range 100.64.0.0/10 for internal routing.
+  // Also trust localhost since the wrapper proxies from 127.0.0.1.
+  const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
+  const proxiesJson = JSON.stringify(trustedProxies);
+  
+  console.log(`[gateway] configuring trustedProxies: ${proxiesJson}`);
+  console.log(`[gateway] config path: ${configPath()}`);
+  
+  // Try setting via CLI first
+  const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
+  console.log(`[gateway] trustedProxies CLI set: exit=${r1.code} output=${r1.output.trim() || '(none)'}`);
+  
+  // Also enable trust proxy mode if the gateway supports it
+  const r2 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.trustProxy", "true"]));
+  console.log(`[gateway] trustProxy CLI set: exit=${r2.code} output=${r2.output.trim() || '(none)'}`);
+  
+  // Fallback: directly modify the config file if CLI failed or as additional insurance
+  try {
+    const cfgPath = configPath();
+    if (fs.existsSync(cfgPath)) {
+      const content = fs.readFileSync(cfgPath, "utf8");
+      let config: Record<string, unknown>;
+      try {
+        config = JSON.parse(content);
+      } catch {
+        console.log(`[gateway] config file is not valid JSON, skipping direct write`);
+        return;
+      }
+      
+      // Ensure gateway section exists
+      if (!config.gateway || typeof config.gateway !== "object") {
+        config.gateway = {};
+      }
+      const gw = config.gateway as Record<string, unknown>;
+      
+      // Set trustedProxies
+      gw.trustedProxies = trustedProxies;
+      gw.trustProxy = true;
+      
+      // Write back
+      fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2), { encoding: "utf8" });
+      console.log(`[gateway] trustedProxies written directly to config file`);
+    }
+  } catch (err) {
+    console.error(`[gateway] failed to write trustedProxies to config file:`, err);
+  }
+  
+  // Verify the settings were applied
+  const verify = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", "gateway.trustedProxies"]));
+  console.log(`[gateway] trustedProxies verify: ${verify.output.trim()}`);
+}
+
 /** Start the gateway process if it is not already running. */
 async function startGateway(): Promise<void> {
   if (state.proc) return;
@@ -129,10 +184,8 @@ async function startGateway(): Promise<void> {
 
   ensureDirectories();
 
-  // Ensure trustedProxies is set for Railway's proxy network before starting.
-  await runCmd(OPENCLAW_NODE, clawArgs([
-    "config", "set", "--json", "gateway.trustedProxies", '["100.64.0.0/10", "127.0.0.1"]'
-  ]));
+  // Ensure trustedProxies is configured before starting.
+  await configureTrustedProxies();
 
   const args = [
     "gateway",
