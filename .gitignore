@@ -16,3 +16,4 @@ npm-debug.log*
 
 # OS metadata files.
 .DS_Store
+reference/
