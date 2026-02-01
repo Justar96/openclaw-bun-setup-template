@@ -1,121 +1,78 @@
-# OpenClaw Railway Template (1‑click deploy)
+# OpenClaw Railway Template
 
-This repo packages **OpenClaw** for Railway with a small **/setup** web wizard so users can deploy and onboard **without running any commands**.
+I forked this from [vignesh07/clawdbot-railway-template](https://github.com/vignesh07/clawdbot-railway-template) because I wanted a simpler, faster setup. This is a Bun-based Railway template that gets you running OpenClaw with zero command-line work.
 
-## What you get
+## What's in the box
 
-- **OpenClaw Gateway + Control UI** (served at `/` and `/openclaw`)
-- A friendly **Setup Wizard** at `/setup` (protected by a password)
-- Persistent state via **Railway Volume** (so config/credentials/memory survive redeploys)
-- One-click **Export backup** (so users can migrate off Railway later)
-- **Import backup** from `/setup` (advanced recovery)
+- OpenClaw Gateway + the web UI (served at `/` and `/openclaw`)
+- A setup wizard at `/setup` so you can configure everything in the browser
+- Persistent storage via Railway Volume (your config and data survive redeploys)
+- Export/import for backups (download at `/setup/export` for easy migration later)
 
-## How it works (high level)
+## How it works
 
-- The container runs a wrapper web server.
-- The wrapper protects `/setup` with `SETUP_PASSWORD`.
-- During setup, the wrapper runs `openclaw onboard --non-interactive ...` inside the container, writes state to the volume, and then starts the gateway.
-- After setup, **`/` is OpenClaw**. The wrapper reverse-proxies all traffic (including WebSockets) to the local gateway process.
+The service runs a small web server that:
+1. Guards the `/setup` endpoint with a password
+2. Walks you through onboarding in the browser
+3. After setup, reverse-proxies everything to the OpenClaw gateway (WebSockets included)
+4. Builds and runs OpenClaw from source during the Docker build so the CLI is available at runtime
 
-## Railway deploy instructions (what you’ll publish as a Template)
+## Deploying to Railway
 
-In Railway Template Composer:
+1. Create a new template from this repo (Dockerfile build)
+2. Add a **Volume** mounted at `/data`
+3. Enable **HTTP Proxy** on port `8080` in Public Networking
+4. Set these variables:
+   - `SETUP_PASSWORD` — required to access the setup page
+   - `PORT=8080` — required and must match the HTTP Proxy port
+   - `OPENCLAW_STATE_DIR=/data/.openclaw` (recommended)
+   - `OPENCLAW_WORKSPACE_DIR=/data/workspace` (recommended)
+   - `OPENCLAW_GATEWAY_TOKEN` (recommended; treat as an admin secret)
+5. (Optional) Pin the OpenClaw source ref: `OPENCLAW_GIT_REF=main` (or a tag/commit)
+6. Deploy
 
-1) Create a new template from this GitHub repo.
-2) Add a **Volume** mounted at `/data`.
-3) Set the following variables:
+Then just hit `https://<your-app>.up.railway.app/setup`, finish the wizard, and you're live. The Control UI is at `/openclaw`.
 
-Required:
-- `SETUP_PASSWORD` — user-provided password to access `/setup`
+Note: This repo includes a Dockerfile used by Railway and CI for container builds.
 
-Recommended:
-- `OPENCLAW_STATE_DIR=/data/.openclaw`
-- `OPENCLAW_WORKSPACE_DIR=/data/workspace`
+## Getting your bot tokens
 
-Optional:
-- `OPENCLAW_GATEWAY_TOKEN` — if not set, the wrapper generates one (not ideal). In a template, set it using a generated secret.
+**Telegram:**
+- Message @BotFather, run `/newbot`, copy the token he gives you
 
-Notes:
-- This template pins OpenClaw to a known-good version by default via Docker build arg `OPENCLAW_GIT_REF`.
+**Discord:**
+- Go to https://discord.com/developers/applications
+- New Application → Bot tab → Add Bot
+- Enable these Privileged Gateway Intents:
+  - Message Content Intent (required)
+  - Server Members Intent (useful for allowlists)
+- Copy the Bot Token
+- In OAuth2 → URL Generator, pick scopes `bot` and `applications.commands`, select your permissions, then use that URL to invite the bot to your server
 
-4) Enable **Public Networking** (HTTP). Railway will assign a domain.
-5) Deploy.
+The setup wizard has advanced Discord options too — DM policies, channel/guild restrictions, pairing mode, etc.
 
-Then:
-- Visit `https://<your-app>.up.railway.app/setup`
-- Complete setup
-- Visit `https://<your-app>.up.railway.app/` and `/openclaw`
+## Local testing
 
-## Getting chat tokens (so you don’t have to scramble)
-
-### Telegram bot token
-1) Open Telegram and message **@BotFather**
-2) Run `/newbot` and follow the prompts
-3) BotFather will give you a token that looks like: `123456789:AA...`
-4) Paste that token into `/setup`
-
-### Discord bot token
-1) Go to the Discord Developer Portal: https://discord.com/developers/applications
-2) **New Application** → pick a name
-3) Open the **Bot** tab → **Add Bot**
-4) **Enable Privileged Gateway Intents** (Bot → Privileged Gateway Intents):
-   - ✅ **MESSAGE CONTENT INTENT** (required)
-   - ✅ **SERVER MEMBERS INTENT** (recommended for allowlists/name lookups)
-5) Copy the **Bot Token** and paste it into `/setup`
-6) Generate invite URL (OAuth2 → URL Generator):
-   - Scopes: `bot`, `applications.commands`
-   - Permissions: View Channels, Send Messages, Read Message History, Embed Links, Attach Files, Add Reactions
-7) Invite the bot to your server using the generated URL
-
-### Discord advanced options (in /setup)
-The setup wizard includes advanced Discord configuration:
-- **DM policy**: `pairing` (default), `allowlist`, `open`, or `disabled`
-- **Guild/Server ID**: Restrict bot to specific server(s)
-- **Channel ID**: Restrict bot to specific channel(s)
-- **Require @mention**: Only respond when mentioned in guild channels
-- **Native commands**: Enable Discord slash commands
-- **History limit**: Number of context messages (default: 20)
-- **Stream mode**: `partial` (stream responses) or `full` (wait for complete)
-
-### Discord pairing
-When DM policy is `pairing` (default), users must be approved:
-1) User sends a DM to the bot
-2) Bot replies with an 8-character pairing code (expires in 1 hour)
-3) Go to `/setup` → Debug console → select `openclaw pairing list <channel>` with arg `discord`
-4) Click **Approve pairing** button or use: `openclaw pairing approve discord <CODE>`
-
-See full Discord docs: https://docs.openclaw.ai/channels/discord
-
-## Local smoke test
+**With Bun (fastest for development):**
 
 ```bash
-docker build -t openclaw-railway-template .
+# Install dependencies
+bun install
 
-docker run --rm -p 8080:8080 \
-  -e PORT=8080 \
-  -e SETUP_PASSWORD=test \
-  -e OPENCLAW_STATE_DIR=/data/.openclaw \
-  -e OPENCLAW_WORKSPACE_DIR=/data/workspace \
-  -v $(pwd)/.tmpdata:/data \
-  openclaw-railway-template
+# Build OpenClaw and the wrapper
+bun run build
 
-# open http://localhost:8080/setup (password: test)
+# Run in dev mode (no password required for /setup)
+bun run dev
+
+# Or run production mode
+PORT=8080 SETUP_PASSWORD=test bun run start
 ```
 
----
+Then open http://localhost:8080/setup (production mode requires the password)
 
-## Official template / endorsements
+Tip: `bun run dev` will fetch/build OpenClaw if it's missing, so you can start there without running a separate prepare step.
 
-- Officially recommended by OpenClaw: <https://docs.openclaw.ai/railway>
-- Railway announcement (official): [Railway tweet announcing 1‑click OpenClaw deploy](https://x.com/railway/status/2015534958925013438)
+## Fork note
 
-  ![Railway official tweet screenshot](assets/railway-official-tweet.jpg)
-
-- Endorsement from Railway CEO: [Jake Cooper tweet endorsing the OpenClaw Railway template](https://x.com/justjake/status/2015536083514405182)
-
-  ![Jake Cooper endorsement tweet screenshot](assets/railway-ceo-endorsement.jpg)
-
-- Created and maintained by **Vignesh N (@vignesh07)**
-- **1800+ deploys on Railway and counting** [Link to template on Railway](https://railway.com/deploy/clawdbot-railway-template)
-
-![Railway template deploy count](assets/railway-deploys.jpg)
+This started as a fork of [clawdbot-railway-template](https://github.com/vignesh07/clawdbot-railway-template). I rewrote it with Bun and stripped out some complexity to get it running quicker. All credit for the original idea and Railway integration goes to Vignesh N — I'm just maintaining this variant.

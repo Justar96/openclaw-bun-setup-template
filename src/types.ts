@@ -1,8 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 
-// ============================================================================
-// Gateway Types
-// ============================================================================
+// Gateway process and lifecycle types.
 
 export interface GatewayResult {
   ok: boolean;
@@ -16,6 +14,7 @@ export interface CommandResult {
 
 export interface WaitForGatewayOptions {
   timeoutMs?: number;
+  requestTimeoutMs?: number;
 }
 
 export interface GatewayState {
@@ -23,9 +22,7 @@ export interface GatewayState {
   starting: Promise<void> | null;
 }
 
-// ============================================================================
-// Auth Types
-// ============================================================================
+// Auth provider configuration used by the setup UI.
 
 export interface AuthOption {
   value: string;
@@ -39,9 +36,7 @@ export interface AuthGroup {
   options: AuthOption[];
 }
 
-// ============================================================================
-// Onboarding Payload Types
-// ============================================================================
+// Payload captured during onboarding.
 
 export interface OnboardPayload {
   flow?: string;
@@ -63,9 +58,7 @@ export interface OnboardPayload {
   slackAppToken?: string;
 }
 
-// ============================================================================
-// Channel Configuration Types
-// ============================================================================
+// Channel configuration shapes persisted in the OpenClaw config.
 
 export interface DiscordGuildConfig {
   enabled: boolean;
@@ -104,9 +97,7 @@ export interface SlackConfig {
   appToken?: string;
 }
 
-// ============================================================================
-// Pairing Types
-// ============================================================================
+// Pairing status output.
 
 export interface PairingEntry {
   code: string;
@@ -120,9 +111,7 @@ export interface ChannelResult {
   raw: string;
 }
 
-// ============================================================================
-// API Request Payload Types
-// ============================================================================
+// API payloads sent from the setup UI.
 
 export interface ConsolePayload {
   cmd?: string;
@@ -138,9 +127,7 @@ export interface PairingApprovePayload {
   code?: string;
 }
 
-// ============================================================================
-// Status Response Types
-// ============================================================================
+// Wrapper status and debug responses.
 
 export interface StatusResponse {
   configured: boolean;

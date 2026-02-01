@@ -54,7 +54,10 @@
       <div class="card main-card">
       <div class="tabs" role="tablist" aria-label="Configuration sections">
         <button class="tab active" data-tab="setup" role="tab" aria-selected="true" aria-controls="tab-setup" id="tab-btn-setup">Setup</button>
-        <button class="tab" data-tab="pairing" role="tab" aria-selected="false" aria-controls="tab-pairing" id="tab-btn-pairing">Pairing</button>
+        <button class="tab" data-tab="pairing" role="tab" aria-selected="false" aria-controls="tab-pairing" id="tab-btn-pairing">
+          <span>Pairing</span>
+          <span id="pairingBadge" class="tab-badge" style="display:none" aria-label="pending requests"></span>
+        </button>
         <button class="tab" data-tab="config" role="tab" aria-selected="false" aria-controls="tab-config" id="tab-btn-config">Config</button>
         <button class="tab" data-tab="console" role="tab" aria-selected="false" aria-controls="tab-console" id="tab-btn-console">Console</button>
         <button class="tab" data-tab="backup" role="tab" aria-selected="false" aria-controls="tab-backup" id="tab-btn-backup">Backup</button>
@@ -63,7 +66,25 @@
       <!-- Setup Tab -->
       <div id="tab-setup" class="tab-content active" role="tabpanel" aria-labelledby="tab-btn-setup">
         <p class="card-muted">Configure your AI provider and messaging channels. After setup, approve users via the Pairing tab.</p>
-
+        <!-- Setup Progress Steps -->
+        <div class=\"setup-steps\" role=\"navigation\" aria-label=\"Setup progress\">
+          <div class=\"setup-step active\" data-step=\"1\">
+            <span class=\"step-number\">1</span>
+            <span>Choose Provider</span>
+          </div>
+          <div class=\"setup-step\" data-step=\"2\">
+            <span class=\"step-number\">2</span>
+            <span>Add Channels</span>
+          </div>
+          <div class=\"setup-step\" data-step=\"3\">
+            <span class=\"step-number\">3</span>
+            <span>Run Setup</span>
+          </div>
+          <div class=\"setup-step\" data-step=\"4\">
+            <span class=\"step-number\">4</span>
+            <span>Approve Users</span>
+          </div>
+        </div>
         <!-- Model/Auth Provider -->
         <fieldset class="collapsible open" id="authSection">
           <legend class="visually-hidden">Model and Authentication Provider</legend>
@@ -215,8 +236,19 @@
 
         <!-- Run Setup -->
         <div class="btn-group mt-4">
-          <button id="runSetup" class="btn btn-primary">Run Setup</button>
-          <button id="resetSetup" class="btn btn-secondary">Reset</button>
+          <button id="runSetup" class="btn btn-primary btn-lg">
+            Run Setup
+          </button>
+          <button id="testConnectivity" class="btn btn-secondary">
+            Test Connection
+          </button>
+          <button id="resetSetup" class="btn">Reset</button>
+        </div>
+        
+        <!-- Connectivity Test Results -->
+        <div id="connectivityResults" class="connectivity-test" style="display:none">
+          <h4>CONNECTION TEST RESULTS</h4>
+          <div class=\"test-results\" id=\"testResultsList\"></div>
         </div>
 
         <pre id="setupLog" style="display:none"></pre>
@@ -224,23 +256,41 @@
 
       <!-- Pairing Tab -->
       <div id="tab-pairing" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-pairing">
-        <p class="card-muted">When DM policy is <code>pairing</code>, users receive an 8-character code. Approve them here.</p>
+        <div class="pairing-header">
+          <div class="pairing-intro">
+            <p class="card-muted">When DM policy is <code>pairing</code>, users receive an 8-character code. Approve them here to grant access.</p>
+            <div class="pairing-help-tip">
+              <span class="help-icon" aria-hidden="true">?</span>
+              <span>Users message your bot, receive a code, then you approve it here.</span>
+            </div>
+          </div>
+        </div>
 
         <div class="action-bar">
-          <button id="pairingRefresh" class="btn btn-primary" aria-label="Refresh pairing requests">Refresh</button>
+          <button id="pairingRefresh" class="btn btn-primary" aria-label="Refresh pairing requests">
+            Refresh
+          </button>
           <label class="checkbox-label inline-checkbox">
             <input type="checkbox" id="pairingAutoRefresh" />
             <span>Auto-refresh (10s)</span>
           </label>
+          <div id="pairingStatus" class="pairing-status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            <span class="status-label">Ready</span>
+          </div>
         </div>
 
         <div id="pairingList" class="pairing-list" role="list" aria-label="Pending pairing requests">
-          <div class="pairing-empty">Click refresh to load pending requests</div>
+          <div class="pairing-empty">
+            <div class="empty-title">No pending requests</div>
+            <div class="empty-hint">Click Refresh to check for new pairing codes, or enable auto-refresh.</div>
+          </div>
         </div>
 
         <!-- Manual Approval -->
         <div class="manual-approval">
           <h3 class="section-subtitle">Manual approval</h3>
+          <p class="text-muted text-sm mb-3">Enter a code manually if you received it through another channel.</p>
           <div class="form-row">
             <div class="form-field">
               <label for="pairingChannel">Channel</label>
@@ -255,9 +305,11 @@
             </div>
             <div class="form-field">
               <label for="pairingCode">Pairing code</label>
-              <input id="pairingCode" type="text" placeholder="Enter 8-char code" maxlength="8" pattern="[A-Za-z0-9]{8}" />
+              <input id="pairingCode" type="text" placeholder="e.g. A1B2C3D4" maxlength="8" pattern="[A-Za-z0-9]{8}" autocomplete="off" spellcheck="false" />
             </div>
-            <button id="pairingApprove" class="btn btn-success align-end" aria-label="Approve pairing code">Approve</button>
+            <button id="pairingApprove" class="btn btn-primary align-end" aria-label="Approve pairing code">
+              Approve
+            </button>
           </div>
           <pre id="pairingOut" class="output-log" style="display:none" aria-live="polite"></pre>
         </div>
@@ -348,6 +400,9 @@
       </nav>
     </footer>
   </div>
+
+  <!-- Toast Notifications Container -->
+  <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
 
   <script src="/setup/ui/app.js"></script>
 </body>

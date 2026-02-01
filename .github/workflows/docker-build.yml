@@ -1,4 +1,4 @@
-name: Docker build
+name: CI
 
 on:
   pull_request:
@@ -7,6 +7,24 @@ on:
       - main
 
 jobs:
+  bun-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build wrapper bundle
+        run: OPENCLAW_SKIP_BUILD=1 bun run build
+
   docker-build:
     runs-on: ubuntu-latest
     steps:
@@ -16,7 +34,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Build only (no push). If this fails, the PR breaks container builds.
+      # Build only (no push). Fail fast if Docker packaging breaks.
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
@@ -24,5 +42,7 @@ jobs:
           file: ./Dockerfile
           push: false
           tags: openclaw-railway-template:ci
+          build-args: |
+            OPENCLAW_GIT_REF=main
           cache-from: type=gha
           cache-to: type=gha,mode=max

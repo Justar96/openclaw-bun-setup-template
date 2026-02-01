@@ -1,10 +1,8 @@
-// OpenClaw Setup - Modular UI Application
+// Setup UI behavior for the OpenClaw wrapper.
 (function() {
   'use strict';
 
-  // ============================================
-  // API Module
-  // ============================================
+  // API helpers for setup endpoints.
   const API = {
     async request(url, options = {}) {
       options.credentials = 'same-origin';
@@ -39,9 +37,7 @@
     }
   };
 
-  // ============================================
-  // DOM Helpers
-  // ============================================
+  // Lightweight DOM helpers.
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -61,14 +57,97 @@
     if (el) el.textContent = text;
   }
 
-  // ============================================
-  // Tabs Module
-  // ============================================
+  // Toast Notification System
+  const Toast = {
+    container: null,
+    queue: [],
+    
+    init() {
+      this.container = $('#toastContainer');
+      if (!this.container) {
+        this.container = document.createElement('div');
+        this.container.id = 'toastContainer';
+        this.container.className = 'toast-container';
+        this.container.setAttribute('aria-live', 'polite');
+        this.container.setAttribute('aria-atomic', 'true');
+        document.body.appendChild(this.container);
+      }
+    },
+    
+    show(message, options = {}) {
+      const {
+        type = 'info', // info, success, error, warning
+        title = '',
+        duration = 4000,
+        closable = true
+      } = options;
+      
+      const icons = {
+        success: '✓',
+        error: '✗',
+        warning: '!',
+        info: 'i'
+      };
+      
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
+        <span class="toast-icon" aria-hidden="true">${icons[type] || icons.info}</span>
+        <div class="toast-content">
+          ${title ? `<div class="toast-title">${this.escapeHtml(title)}</div>` : ''}
+          <div class="toast-message">${this.escapeHtml(message)}</div>
+        </div>
+        ${closable ? '<button class="toast-close" aria-label="Close notification">×</button>' : ''}
+      `;
+      
+      if (closable) {
+        toast.querySelector('.toast-close').addEventListener('click', () => this.dismiss(toast));
+      }
+      
+      this.container.appendChild(toast);
+      
+      if (duration > 0) {
+        setTimeout(() => this.dismiss(toast), duration);
+      }
+      
+      return toast;
+    },
+    
+    dismiss(toast) {
+      if (!toast || !toast.parentNode) return;
+      toast.classList.add('toast-exit');
+      setTimeout(() => toast.remove(), 200);
+    },
+    
+    success(message, title = '') {
+      return this.show(message, { type: 'success', title });
+    },
+    
+    error(message, title = 'Error') {
+      return this.show(message, { type: 'error', title, duration: 6000 });
+    },
+    
+    warning(message, title = '') {
+      return this.show(message, { type: 'warning', title });
+    },
+    
+    info(message, title = '') {
+      return this.show(message, { type: 'info', title });
+    },
+    
+    escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+  };
+
+  // Tabbed navigation for the main sections.
   const Tabs = {
     init() {
       $$('.tab').forEach(tab => {
         tab.addEventListener('click', () => this.activate(tab.dataset.tab));
-        // Keyboard navigation for tabs
+        // Support arrow-key navigation.
         tab.addEventListener('keydown', (e) => this.handleKeydown(e, tab));
       });
     },
@@ -81,6 +160,11 @@
         t.setAttribute('tabindex', isActive ? '0' : '-1');
       });
       $$('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tabId}`));
+      
+      // Auto-refresh pairing when switching to that tab
+      if (tabId === 'pairing') {
+        Pairing.refresh();
+      }
     },
 
     handleKeydown(e, tab) {
@@ -116,9 +200,7 @@
     }
   };
 
-  // ============================================
-  // Collapsible Module
-  // ============================================
+  // Collapsible sections with ARIA updates.
   const Collapsible = {
     init() {
       $$('.collapsible-toggle').forEach(toggle => {
@@ -127,7 +209,7 @@
           const isOpen = collapsible.classList.toggle('open');
           toggle.setAttribute('aria-expanded', isOpen);
         });
-        // Keyboard support - Enter and Space
+        // Support Enter and Space toggles.
         toggle.addEventListener('keydown', (e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
@@ -135,7 +217,7 @@
           }
         });
       });
-      // Set initial aria-expanded states
+      // Initialize aria-expanded for pre-opened sections.
       $$('.collapsible').forEach(collapsible => {
         const toggle = collapsible.querySelector('.collapsible-toggle');
         if (toggle) {
@@ -145,9 +227,7 @@
     }
   };
 
-  // ============================================
-  // Status Module
-  // ============================================
+  // Status badge rendering and refresh logic.
   const Status = {
     el: null,
     authGroups: [],
@@ -178,7 +258,7 @@
       if (error) {
         this.el.className = 'status-badge error';
         setHtml(this.el, `<span class="status-text">Error</span>`);
-        // Add error log below the badge
+        // Render an error log beneath the badge.
         const parent = this.el.parentElement;
         let logEl = parent.querySelector('.status-log');
         if (!logEl) {
@@ -208,9 +288,7 @@
     }
   };
 
-  // ============================================
-  // Auth Module
-  // ============================================
+  // Auth provider selection UI.
   const Auth = {
     groupEl: null,
     choiceEl: null,
@@ -248,20 +326,212 @@
     }
   };
 
-  // ============================================
-  // Setup Module
-  // ============================================
+  // Setup form submission and reset.
   const Setup = {
     logEl: null,
+    isRunning: false,
+    connectivityEl: null,
+    testResultsEl: null,
 
     init() {
       this.logEl = $('#setupLog');
+      this.connectivityEl = $('#connectivityResults');
+      this.testResultsEl = $('#testResultsList');
 
       $('#runSetup')?.addEventListener('click', () => this.run());
       $('#resetSetup')?.addEventListener('click', () => this.reset());
+      $('#testConnectivity')?.addEventListener('click', () => this.testConnectivity());
+      
+      // Add input validation listeners
+      this.setupValidation();
+      
+      // Update progress steps based on section visibility
+      this.updateProgressSteps(1);
+    },
+    
+    updateProgressSteps(activeStep) {
+      $$('.setup-step').forEach((step, index) => {
+        const stepNum = index + 1;
+        step.classList.remove('active', 'completed');
+        if (stepNum < activeStep) {
+          step.classList.add('completed');
+        } else if (stepNum === activeStep) {
+          step.classList.add('active');
+        }
+      });
+    },
+    
+    setupValidation() {
+      // Validate token formats on blur
+      const tokenInputs = ['#telegramToken', '#discordToken', '#slackBotToken', '#slackAppToken'];
+      
+      tokenInputs.forEach(sel => {
+        const input = $(sel);
+        if (!input) return;
+        
+        input.addEventListener('blur', () => this.validateTokenField(input));
+        input.addEventListener('input', () => {
+          // Clear error on new input
+          input.parentElement?.classList.remove('has-error');
+          const errorEl = input.parentElement?.querySelector('.field-error');
+          if (errorEl) errorEl.remove();
+        });
+      });
+      
+      // Track section changes for progress
+      $$('.collapsible-toggle').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+          setTimeout(() => {
+            const authOpen = $('#authSection')?.classList.contains('open');
+            const channelsOpen = $('#channelsSection')?.classList.contains('open');
+            if (channelsOpen) this.updateProgressSteps(2);
+            else if (authOpen) this.updateProgressSteps(1);
+          }, 100);
+        });
+      });
+    },
+    
+    validateTokenField(input) {
+      const value = input.value.trim();
+      if (!value) return true; // Empty is OK (optional fields)
+      
+      const id = input.id;
+      let valid = true;
+      let errorMsg = '';
+      
+      if (id === 'telegramToken') {
+        // Telegram tokens are: {bot_id}:{token}, e.g., 123456:ABC-DEF
+        if (!/^\d+:[A-Za-z0-9_-]+$/.test(value)) {
+          valid = false;
+          errorMsg = 'Invalid format. Expected: 123456:ABC... (get from @BotFather)';
+        }
+      } else if (id === 'discordToken') {
+        // Discord tokens are long alphanumeric strings with dots
+        if (value.length < 50) {
+          valid = false;
+          errorMsg = 'Token seems too short. Check the Bot Token from Discord Developer Portal.';
+        }
+      } else if (id === 'slackBotToken') {
+        if (!value.startsWith('xoxb-')) {
+          valid = false;
+          errorMsg = 'Bot tokens should start with xoxb-';
+        }
+      } else if (id === 'slackAppToken') {
+        if (!value.startsWith('xapp-')) {
+          valid = false;
+          errorMsg = 'App tokens should start with xapp-';
+        }
+      }
+      
+      const parent = input.parentElement;
+      if (!valid && parent) {
+        parent.classList.add('has-error');
+        let errorEl = parent.querySelector('.field-error');
+        if (!errorEl) {
+          errorEl = document.createElement('span');
+          errorEl.className = 'field-error';
+          parent.appendChild(errorEl);
+        }
+        errorEl.textContent = errorMsg;
+      } else if (parent) {
+        parent.classList.remove('has-error');
+        parent.classList.add('has-success');
+        const errorEl = parent.querySelector('.field-error');
+        if (errorEl) errorEl.remove();
+      }
+      
+      return valid;
+    },
+    
+    validateAll() {
+      const issues = [];
+      
+      // Check if at least auth is configured
+      const authSecret = $('#authSecret')?.value?.trim();
+      const authChoice = $('#authChoice')?.value;
+      
+      if (!authSecret && authChoice && !authChoice.includes('local')) {
+        issues.push('Please provide an API key or token for the selected provider.');
+      }
+      
+      // Validate any channel tokens that are provided
+      const tokenInputs = ['#telegramToken', '#discordToken', '#slackBotToken', '#slackAppToken'];
+      tokenInputs.forEach(sel => {
+        const input = $(sel);
+        if (input?.value?.trim() && !this.validateTokenField(input)) {
+          issues.push(`Invalid ${input.id.replace(/Token$/, '')} token format.`);
+        }
+      });
+      
+      return issues;
+    },
+    
+    async testConnectivity() {
+      show(this.connectivityEl);
+      
+      const tests = [
+        { name: 'API Status', endpoint: '/setup/api/status' },
+        { name: 'Gateway Health', endpoint: '/setup/api/console/run', body: { cmd: 'openclaw.health' } }
+      ];
+      
+      let html = '';
+      tests.forEach(t => {
+        html += `<div class="test-item pending" data-test="${t.name}">
+          <span class="test-icon">○</span>
+          <span class="test-label">${t.name}</span>
+          <span class="test-detail">Testing...</span>
+        </div>`;
+      });
+      setHtml(this.testResultsEl, html);
+      
+      for (const test of tests) {
+        const itemEl = this.testResultsEl.querySelector(`[data-test="${test.name}"]`);
+        try {
+          const start = Date.now();
+          let result;
+          if (test.body) {
+            result = await API.post(test.endpoint, test.body);
+          } else {
+            result = await API.get(test.endpoint);
+          }
+          const elapsed = Date.now() - start;
+          
+          if (itemEl) {
+            itemEl.classList.remove('pending');
+            itemEl.classList.add('success');
+            itemEl.querySelector('.test-icon').textContent = '✓';
+            itemEl.querySelector('.test-detail').textContent = `OK (${elapsed}ms)`;
+          }
+        } catch (e) {
+          if (itemEl) {
+            itemEl.classList.remove('pending');
+            itemEl.classList.add('error');
+            itemEl.querySelector('.test-icon').textContent = '✗';
+            itemEl.querySelector('.test-detail').textContent = e.message;
+          }
+        }
+      }
+      
+      Toast.success('Connection tests completed');
     },
 
     async run() {
+      if (this.isRunning) return;
+      
+      // Validate inputs first
+      const issues = this.validateAll();
+      if (issues.length > 0) {
+        Toast.warning(issues.join(' '));
+        return;
+      }
+      
+      this.isRunning = true;
+      const runBtn = $('#runSetup');
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running Setup...';
+      }
+      
       const payload = {
         flow: $('#flow')?.value,
         authChoice: $('#authChoice')?.value,
@@ -286,14 +556,34 @@
       try {
         const result = await API.post('/setup/api/run', payload);
         setText(this.logEl, result.output || JSON.stringify(result, null, 2));
+        
+        if (result.ok) {
+          Toast.success('Setup completed successfully! You can now configure channels and approve users.', 'Setup Complete');
+          this.updateProgressSteps(4); // Move to "Approve Users" step
+          // Highlight the Pairing tab
+          const pairingTab = $('#tab-btn-pairing');
+          if (pairingTab) {
+            pairingTab.style.animation = 'badge-pulse 1s ease-in-out 3';
+          }
+        } else {
+          Toast.error('Setup encountered issues. Check the log output for details.');
+        }
+        
         Status.refresh();
       } catch (e) {
         setText(this.logEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Setup Failed');
+      } finally {
+        this.isRunning = false;
+        if (runBtn) {
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run Setup';
+        }
       }
     },
 
     async reset() {
-      if (!confirm('Reset setup? This deletes the config file.')) return;
+      if (!confirm('Reset setup? This deletes the config file and you will need to reconfigure everything.')) return;
 
       show(this.logEl);
       setText(this.logEl, 'Resetting...\n');
@@ -301,24 +591,30 @@
       try {
         const text = await API.postRaw('/setup/api/reset', '', 'text/plain');
         setText(this.logEl, text);
+        Toast.info('Setup has been reset. You can now reconfigure from scratch.');
         Status.refresh();
       } catch (e) {
         setText(this.logEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Reset Failed');
       }
     }
   };
 
-  // ============================================
-  // Pairing Module
-  // ============================================
+  // Pairing list refresh and approval flow.
   const Pairing = {
     listEl: null,
     outEl: null,
+    statusEl: null,
+    badgeEl: null,
     autoInterval: null,
+    pendingCount: 0,
+    isRefreshing: false,
 
     init() {
       this.listEl = $('#pairingList');
       this.outEl = $('#pairingOut');
+      this.statusEl = $('#pairingStatus');
+      this.badgeEl = $('#pairingBadge');
 
       $('#pairingRefresh')?.addEventListener('click', () => this.refresh());
       $('#pairingApprove')?.addEventListener('click', () => this.approveManual());
@@ -326,18 +622,62 @@
       $('#pairingAutoRefresh')?.addEventListener('change', (e) => {
         this.setAutoRefresh(e.target.checked);
       });
+      
+      // Auto-format pairing code input (uppercase)
+      $('#pairingCode')?.addEventListener('input', (e) => {
+        e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      });
+      
+      // Submit on Enter in code field
+      $('#pairingCode')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.approveManual();
+        }
+      });
+    },
+    
+    setStatus(state, message) {
+      if (!this.statusEl) return;
+      this.statusEl.className = `pairing-status ${state}`;
+      const label = this.statusEl.querySelector('.status-label');
+      if (label) label.textContent = message;
+    },
+    
+    updateBadge(count) {
+      this.pendingCount = count;
+      if (!this.badgeEl) return;
+      
+      if (count > 0) {
+        this.badgeEl.textContent = count > 99 ? '99+' : count;
+        this.badgeEl.style.display = 'inline-flex';
+        // Show notification if count increased
+        if (count > this.lastCount && this.lastCount !== undefined) {
+          Toast.info(`${count - this.lastCount} new pairing request(s)`, 'New Request');
+        }
+      } else {
+        this.badgeEl.style.display = 'none';
+      }
+      this.lastCount = count;
     },
 
     async refresh() {
-      if (!this.listEl) return;
-
-      setHtml(this.listEl, '<div class="pairing-empty loading">Loading...</div>');
+      if (!this.listEl || this.isRefreshing) return;
+      
+      this.isRefreshing = true;
+      this.setStatus('refreshing', 'Checking...');
 
       try {
         const data = await API.get('/setup/api/pairing/list');
         this.render(data.channels || {});
+        this.setStatus('success', 'Updated');
+        setTimeout(() => this.setStatus('', 'Ready'), 2000);
       } catch (e) {
-        setHtml(this.listEl, `<div class="pairing-empty text-danger">Error: ${e.message}</div>`);
+        setHtml(this.listEl, `<div class="pairing-empty"><div class="empty-icon">⚠</div><div class="empty-title">Error loading requests</div><div class="empty-hint">${e.message}</div></div>`);
+        this.setStatus('error', 'Error');
+        Toast.error(e.message, 'Failed to load pairing requests');
+      } finally {
+        this.isRefreshing = false;
       }
     },
 
@@ -350,13 +690,23 @@
         if (pending.length > 0) {
           total += pending.length;
           pending.forEach(p => {
+            const user = p.user && p.user !== 'unknown' ? p.user : '';
+            const timeAgo = p.timestamp ? this.formatTimeAgo(p.timestamp) : '';
+            
             html += `
-              <div class="pairing-item">
-                <span class="pairing-channel">${ch}</span>
-                <span class="pairing-code">${p.code || 'N/A'}</span>
-                ${p.user && p.user !== 'unknown' ? `<span class="pairing-user">from ${p.user}</span>` : ''}
-                <button class="btn btn-success btn-sm pairing-quick-approve" 
-                        data-channel="${ch}" data-code="${p.code || ''}">
+              <div class="pairing-item" data-channel="${ch}" data-code="${p.code || ''}">
+                <span class="pairing-channel">${this.escapeHtml(ch)}</span>
+                <div class="pairing-info">
+                  ${user ? `<span class="pairing-user">${this.escapeHtml(user)}</span>` : '<span class="pairing-user">Unknown user</span>'}
+                  ${timeAgo ? `<span class="pairing-time">${timeAgo}</span>` : ''}
+                </div>
+                <div class="pairing-code-wrapper">
+                  <span class="pairing-code">${this.escapeHtml(p.code || 'N/A')}</span>
+                  <button class="copy-btn" data-code="${this.escapeHtml(p.code || '')}" title="Copy code" aria-label="Copy pairing code">
+                    Copy
+                  </button>
+                </div>
+                <button class="btn btn-primary btn-sm pairing-quick-approve">
                   Approve
                 </button>
               </div>
@@ -366,30 +716,119 @@
       }
 
       if (total === 0) {
-        html = '<div class="pairing-empty">No pending requests. When users DM your bot, their codes appear here.</div>';
+        html = `
+          <div class="pairing-empty">
+            <div class="empty-title">No pending requests</div>
+            <div class="empty-hint">When users message your bot with DM policy set to "pairing", their codes will appear here for approval.</div>
+          </div>
+        `;
       }
 
       setHtml(this.listEl, html);
+      this.updateBadge(total);
 
-      // Attach quick approve handlers
+      // Attach event handlers
       this.listEl.querySelectorAll('.pairing-quick-approve').forEach(btn => {
-        btn.addEventListener('click', () => {
-          this.approve(btn.dataset.channel, btn.dataset.code);
+        btn.addEventListener('click', (e) => {
+          const item = e.target.closest('.pairing-item');
+          if (item) {
+            this.approve(item.dataset.channel, item.dataset.code, item);
+          }
+        });
+      });
+      
+      this.listEl.querySelectorAll('.copy-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.copyCode(btn.dataset.code, btn);
         });
       });
     },
+    
+    async copyCode(code, btn) {
+      try {
+        await navigator.clipboard.writeText(code);
+        btn.classList.add('copied');
+        btn.textContent = 'Copied';
+        Toast.success(`Code ${code} copied to clipboard`);
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.textContent = 'Copy';
+        }, 2000);
+      } catch (e) {
+        // Fallback for browsers without clipboard API
+        const input = document.createElement('input');
+        input.value = code;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        Toast.success(`Code ${code} copied`);
+      }
+    },
+    
+    formatTimeAgo(timestamp) {
+      if (!timestamp) return '';
+      const now = Date.now();
+      const then = new Date(timestamp).getTime();
+      const diff = Math.floor((now - then) / 1000);
+      
+      if (diff < 60) return 'just now';
+      if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+      if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+      return `${Math.floor(diff / 86400)}d ago`;
+    },
+    
+    escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    },
 
-    async approve(channel, code) {
+    async approve(channel, code, itemEl = null) {
+      if (itemEl) {
+        itemEl.classList.add('approving');
+        const btn = itemEl.querySelector('.pairing-quick-approve');
+        if (btn) btn.textContent = 'Approving...';
+      }
+      
       show(this.outEl);
       setText(this.outEl, `Approving ${channel} / ${code}...`);
 
       try {
         const result = await API.post('/setup/api/pairing/approve', { channel, code });
-        const msg = result.ok ? 'Approved successfully' : `Failed: ${result.output || result.error}`;
-        setText(this.outEl, msg + '\n' + (result.output || ''));
-        this.refresh();
+        
+        if (result.ok) {
+          Toast.success(`User approved for ${channel}`, 'Pairing Approved');
+          if (itemEl) {
+            itemEl.classList.remove('approving');
+            itemEl.classList.add('approved');
+            const btn = itemEl.querySelector('.pairing-quick-approve');
+            if (btn) {
+              btn.textContent = 'Approved';
+              btn.disabled = true;
+            }
+            // Remove item after animation
+            setTimeout(() => {
+              itemEl.style.opacity = '0';
+              itemEl.style.transform = 'translateX(20px)';
+              setTimeout(() => itemEl.remove(), 200);
+              // Update count
+              this.updateBadge(this.pendingCount - 1);
+            }, 1500);
+          }
+          setText(this.outEl, `Approved successfully!\n${result.output || ''}`);
+        } else {
+          throw new Error(result.output || result.error || 'Approval failed');
+        }
       } catch (e) {
+        Toast.error(e.message, 'Approval Failed');
         setText(this.outEl, `Error: ${e.message}`);
+        if (itemEl) {
+          itemEl.classList.remove('approving');
+          const btn = itemEl.querySelector('.pairing-quick-approve');
+          if (btn) btn.textContent = 'Retry';
+        }
       }
     },
 
@@ -398,7 +837,14 @@
       const code = ($('#pairingCode')?.value || '').trim().toUpperCase();
       
       if (!code) {
-        alert('Enter a pairing code');
+        Toast.warning('Please enter an 8-character pairing code');
+        $('#pairingCode')?.focus();
+        return;
+      }
+      
+      if (code.length !== 8) {
+        Toast.warning('Pairing code must be exactly 8 characters');
+        $('#pairingCode')?.focus();
         return;
       }
 
@@ -415,13 +861,14 @@
       if (enabled) {
         this.refresh();
         this.autoInterval = setInterval(() => this.refresh(), 10000);
+        Toast.info('Auto-refresh enabled (every 10s)');
+      } else {
+        Toast.info('Auto-refresh disabled');
       }
     }
   };
 
-  // ============================================
-  // Config Module
-  // ============================================
+  // Config editor for raw JSON.
   const Config = {
     textEl: null,
     pathEl: null,
@@ -445,6 +892,7 @@
         this.textEl.value = data.content || '';
       } catch (e) {
         setText(this.pathEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Failed to load config');
       }
     },
 
@@ -456,44 +904,71 @@
 
       try {
         const result = await API.post('/setup/api/config/raw', { content: this.textEl.value });
-        setText(this.outEl, result.ok ? `Saved: ${result.path}\nGateway restarted.` : `Error: ${result.error}`);
+        if (result.ok) {
+          setText(this.outEl, `Saved: ${result.path}\nGateway restarted.`);
+          Toast.success('Configuration saved and gateway restarted.');
+        } else {
+          setText(this.outEl, `Error: ${result.error}`);
+          Toast.error(result.error, 'Save Failed');
+        }
         Status.refresh();
       } catch (e) {
         setText(this.outEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Save Failed');
       }
     }
   };
 
-  // ============================================
-  // Console Module
-  // ============================================
+  // Console command runner.
   const Console = {
     outEl: null,
 
     init() {
       this.outEl = $('#consoleOut');
       $('#consoleRun')?.addEventListener('click', () => this.run());
+      
+      // Run on Enter in arg field
+      $('#consoleArg')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.run();
+        }
+      });
     },
 
     async run() {
       const cmd = $('#consoleCmd')?.value;
       const arg = $('#consoleArg')?.value || '';
+      const runBtn = $('#consoleRun');
+
+      if (runBtn) {
+        runBtn.disabled = true;
+        runBtn.textContent = 'Running...';
+      }
 
       setText(this.outEl, `Running ${cmd}...`);
 
       try {
         const result = await API.post('/setup/api/console/run', { cmd, arg });
         setText(this.outEl, result.output || JSON.stringify(result, null, 2));
+        
+        if (result.ok) {
+          Toast.success(`Command completed: ${cmd}`);
+        }
         Status.refresh();
       } catch (e) {
         setText(this.outEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Command Failed');
+      } finally {
+        if (runBtn) {
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run';
+        }
       }
     }
   };
 
-  // ============================================
-  // Backup Module
-  // ============================================
+  // Backup import flow.
   const Backup = {
     outEl: null,
 
@@ -507,30 +982,31 @@
       const file = fileInput?.files?.[0];
 
       if (!file) {
-        alert('Select a .tar.gz file first');
+        Toast.warning('Please select a .tar.gz backup file first.');
         return;
       }
 
-      if (!confirm('Import backup? This overwrites files under /data.')) return;
+      if (!confirm('Import backup? This will overwrite your current configuration and data under /data.')) return;
 
       show(this.outEl);
-      setText(this.outEl, `Uploading ${file.name} (${file.size} bytes)...`);
+      setText(this.outEl, `Uploading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`);
 
       try {
         const buf = await file.arrayBuffer();
         const text = await API.postRaw('/setup/import', buf, 'application/gzip');
         setText(this.outEl, text);
+        Toast.success('Backup imported successfully! Gateway has been restarted.');
         Status.refresh();
       } catch (e) {
         setText(this.outEl, `Error: ${e.message}`);
+        Toast.error(e.message, 'Import Failed');
       }
     }
   };
 
-  // ============================================
-  // Initialize App
-  // ============================================
+  // App bootstrap.
   document.addEventListener('DOMContentLoaded', () => {
+    Toast.init();
     Tabs.init();
     Collapsible.init();
     Auth.init();
@@ -540,5 +1016,13 @@
     Config.init();
     Console.init();
     Backup.init();
+    
+    // Show welcome message on first load
+    if (!sessionStorage.getItem('welcomed')) {
+      sessionStorage.setItem('welcomed', '1');
+      setTimeout(() => {
+        Toast.info('Configure your AI provider and channels, then approve users via the Pairing tab.', 'Welcome to OpenClaw Setup');
+      }, 500);
+    }
   });
 })();

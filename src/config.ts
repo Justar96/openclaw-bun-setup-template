@@ -5,26 +5,34 @@ import path from "node:path";
 
 import type { AuthGroup, OnboardPayload } from "./types.js";
 
-// ============================================================================
-// Environment Configuration
-// ============================================================================
+const DEFAULT_PUBLIC_PORT = 8080;
+const DEFAULT_INTERNAL_GATEWAY_PORT = 18789;
+const LEGACY_OPENCLAW_ENTRY = "/openclaw/dist/entry.js";
+const LOCAL_OPENCLAW_ENTRY = path.join(process.cwd(), "openclaw", "dist", "entry.js");
 
-/**
- * Railway deployments sometimes inject PORT=3000 by default. We want the wrapper to
- * reliably listen on 8080 unless explicitly overridden.
- *
- * Prefer OPENCLAW_PUBLIC_PORT (set in the Dockerfile / template) over PORT.
- * Keep CLAWDBOT_PUBLIC_PORT as a backward-compat alias for older templates.
- */
-export const PORT: number = Number.parseInt(
-  process.env.OPENCLAW_PUBLIC_PORT ?? process.env.CLAWDBOT_PUBLIC_PORT ?? process.env.PORT ?? "8080",
-  10,
+function resolvePort(raw: string | undefined, fallback: number): number {
+  const value = raw?.trim();
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+    return fallback;
+  }
+  return parsed;
+}
+
+function resolveEntryPath(): string {
+  const envEntry = process.env.OPENCLAW_ENTRY?.trim();
+  if (envEntry) return envEntry;
+  return fs.existsSync(LOCAL_OPENCLAW_ENTRY) ? LOCAL_OPENCLAW_ENTRY : LEGACY_OPENCLAW_ENTRY;
+}
+
+/** Prefer explicit public port overrides, otherwise fall back to Railway PORT or 8080. */
+export const PORT: number = resolvePort(
+  process.env.OPENCLAW_PUBLIC_PORT ?? process.env.CLAWDBOT_PUBLIC_PORT ?? process.env.PORT,
+  DEFAULT_PUBLIC_PORT,
 );
 
-/**
- * State/workspace directories.
- * OpenClaw defaults to ~/.openclaw. Keep CLAWDBOT_* as backward-compat aliases.
- */
+/** State/workspace directories with backward-compatible CLAWDBOT aliases. */
 export const STATE_DIR: string =
   process.env.OPENCLAW_STATE_DIR?.trim() ||
   process.env.CLAWDBOT_STATE_DIR?.trim() ||
@@ -35,41 +43,30 @@ export const WORKSPACE_DIR: string =
   process.env.CLAWDBOT_WORKSPACE_DIR?.trim() ||
   path.join(STATE_DIR, "workspace");
 
-/**
- * Protect /setup with a user-provided password.
- * In dev mode (no RAILWAY_ENVIRONMENT), allow bypass with DEV_MODE=1
- */
+/** Password gate for /setup; DEV_MODE bypasses this outside Railway. */
 export const SETUP_PASSWORD: string | undefined = process.env.SETUP_PASSWORD?.trim();
 
-export const DEV_MODE: boolean = 
-  !process.env.RAILWAY_ENVIRONMENT && 
-  (process.env.DEV_MODE === "1" || process.env.NODE_ENV === "development");
+const inRailway = Boolean(process.env.RAILWAY_ENVIRONMENT);
+const devOverride = process.env.DEV_MODE === "1";
+const nodeDev = process.env.NODE_ENV === "development";
+export const DEV_MODE: boolean = !inRailway && (devOverride || nodeDev);
 
-/**
- * Where the gateway will listen internally (we proxy to it).
- */
-export const INTERNAL_GATEWAY_PORT: number = Number.parseInt(
-  process.env.INTERNAL_GATEWAY_PORT ?? "18789",
-  10
+/** Internal gateway bind target used by the proxy. */
+export const INTERNAL_GATEWAY_PORT: number = resolvePort(
+  process.env.INTERNAL_GATEWAY_PORT,
+  DEFAULT_INTERNAL_GATEWAY_PORT,
 );
 export const INTERNAL_GATEWAY_HOST: string = process.env.INTERNAL_GATEWAY_HOST ?? "127.0.0.1";
 export const GATEWAY_TARGET: string = `http://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}`;
 
-/**
- * Always run the built-from-source CLI entry directly to avoid PATH/global-install mismatches.
- */
-export const OPENCLAW_ENTRY: string = process.env.OPENCLAW_ENTRY?.trim() || "/openclaw/dist/entry.js";
+/** Resolve the OpenClaw CLI entry path, preferring a local build and falling back to legacy paths. */
+export const OPENCLAW_ENTRY: string = resolveEntryPath();
 export const OPENCLAW_NODE: string = process.env.OPENCLAW_NODE?.trim() || "bun";
 
-/**
- * UI directory path
- */
+/** UI assets live alongside the wrapper source. */
 export const UI_DIR: string = path.join(process.cwd(), "src", "ui");
 
-// ============================================================================
-// Gateway Token Resolution
-// ============================================================================
-
+// Resolve the gateway token from env, disk, or a new random value.
 function resolveGatewayToken(): string {
   const envTok = process.env.OPENCLAW_GATEWAY_TOKEN?.trim() || process.env.CLAWDBOT_GATEWAY_TOKEN?.trim();
   if (envTok) return envTok;
@@ -79,7 +76,7 @@ function resolveGatewayToken(): string {
     const existing = fs.readFileSync(tokenPath, "utf8").trim();
     if (existing) return existing;
   } catch {
-    // ignore
+    // Skip unreadable token files and generate a new one.
   }
 
   const generated = crypto.randomBytes(32).toString("hex");
@@ -87,31 +84,23 @@ function resolveGatewayToken(): string {
     fs.mkdirSync(STATE_DIR, { recursive: true });
     fs.writeFileSync(tokenPath, generated, { encoding: "utf8", mode: 0o600 });
   } catch {
-    // best-effort
+    // Token persistence is best-effort; we can still return the generated value.
   }
   return generated;
 }
 
 export const OPENCLAW_GATEWAY_TOKEN: string = resolveGatewayToken();
 
-// Set environment variables for child processes
+// Keep child processes aligned with the resolved gateway token.
 process.env.OPENCLAW_GATEWAY_TOKEN = OPENCLAW_GATEWAY_TOKEN;
 process.env.CLAWDBOT_GATEWAY_TOKEN = process.env.CLAWDBOT_GATEWAY_TOKEN || OPENCLAW_GATEWAY_TOKEN;
 
-// ============================================================================
-// Path Helpers
-// ============================================================================
-
-/**
- * Get CLI arguments with the entry point prepended.
- */
+/** Prefix CLI arguments with the OpenClaw entrypoint. */
 export function clawArgs(args: string[]): string[] {
   return [OPENCLAW_ENTRY, ...args];
 }
 
-/**
- * Get the path to the OpenClaw config file.
- */
+/** Resolve the OpenClaw config file path. */
 export function configPath(): string {
   return (
     process.env.OPENCLAW_CONFIG_PATH?.trim() ||
@@ -120,9 +109,7 @@ export function configPath(): string {
   );
 }
 
-/**
- * Check if OpenClaw is configured (config file exists).
- */
+/** Return true when the config file exists on disk. */
 export function isConfigured(): boolean {
   try {
     return fs.existsSync(configPath());
@@ -131,17 +118,13 @@ export function isConfigured(): boolean {
   }
 }
 
-/**
- * Ensure state and workspace directories exist.
- */
+/** Ensure state and workspace directories exist on disk. */
 export function ensureDirectories(): void {
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
 }
 
-/**
- * Get environment variables for child processes.
- */
+/** Build environment variables for child processes. */
 export function getChildEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -152,10 +135,7 @@ export function getChildEnv(): NodeJS.ProcessEnv {
   };
 }
 
-// ============================================================================
-// Auth Groups Definition
-// ============================================================================
-
+// Auth providers shown in the setup UI.
 export const AUTH_GROUPS: AuthGroup[] = [
   {
     value: "openai",
@@ -252,10 +232,7 @@ export const AUTH_GROUPS: AuthGroup[] = [
   },
 ];
 
-// ============================================================================
-// Auth Secret Mapping
-// ============================================================================
-
+// CLI flags for auth secrets keyed by the setup option value.
 const AUTH_SECRET_MAP: Record<string, string> = {
   "openai-api-key": "--openai-api-key",
   "apiKey": "--anthropic-api-key",
@@ -271,13 +248,7 @@ const AUTH_SECRET_MAP: Record<string, string> = {
   "opencode-zen": "--opencode-zen-api-key",
 };
 
-// ============================================================================
-// Onboarding Arguments Builder
-// ============================================================================
-
-/**
- * Build CLI arguments for the onboard command.
- */
+/** Build CLI arguments for the OpenClaw onboarding command. */
 export function buildOnboardArgs(payload: OnboardPayload): string[] {
   const args: string[] = [
     "onboard",
@@ -317,16 +288,12 @@ export function buildOnboardArgs(payload: OnboardPayload): string[] {
   return args;
 }
 
-// ============================================================================
-// Allowed Console Commands
-// ============================================================================
-
 export const ALLOWED_CONSOLE_COMMANDS = new Set<string>([
-  // Wrapper-managed lifecycle
+  // Wrapper lifecycle actions.
   "gateway.restart",
   "gateway.stop",
   "gateway.start",
-  // OpenClaw CLI helpers
+  // OpenClaw CLI helpers.
   "openclaw.version",
   "openclaw.status",
   "openclaw.health",

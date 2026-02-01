@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun build src/server.ts --outdir dist --target bun --sourcemap",
-    "dev": "NODE_ENV=development bun run src/server.ts",
+    "prepare:openclaw": "bun run scripts/prepare-openclaw.ts",
+    "build": "bun run scripts/prepare-openclaw.ts && bun build src/server.ts --outdir dist --target bun --sourcemap",
+    "dev": "bun run scripts/prepare-openclaw.ts && NODE_ENV=development bun run src/server.ts",
     "start": "bun run dist/server.js",
     "lint": "bun x tsc --noEmit",
     "typecheck": "bun x tsc --noEmit",

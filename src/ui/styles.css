@@ -1,9 +1,9 @@
-/* OpenClaw Setup - Technical Machine Aesthetic */
-/* Improved accessibility and balanced layout */
+/* Base theme for the setup UI. */
+/* Accessibility tweaks and layout balance. */
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* Skip Link for Accessibility */
+/* Skip Link for Accessibility. */
 .skip-link {
   position: absolute;
   top: -100%;
@@ -22,7 +22,7 @@
   outline-offset: 2px;
 }
 
-/* Visually hidden but accessible */
+/* Visually hidden but accessible. */
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -49,14 +49,14 @@ body {
   padding: 24px;
 }
 
-/* Main Layout - Responsive Flow */
+/* Main Layout - Responsive Flow. */
 .main-layout {
   display: flex;
   flex-direction: column;
   gap: 24px;
 }
 
-/* Sidebar stacks on top on mobile/tablet */
+/* Sidebar stacks on top on mobile/tablet. */
 .sidebar {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -68,7 +68,7 @@ body {
   margin: 0;
 }
 
-/* Large screens: side by side layout */
+/* Large screens: side by side layout. */
 @media (min-width: 1100px) {
   .main-layout {
     display: grid;
@@ -86,14 +86,14 @@ body {
   }
 }
 
-/* Small screens: single column sidebar */
+/* Small screens: single column sidebar. */
 @media (max-width: 600px) {
   .sidebar {
     grid-template-columns: 1fr;
   }
 }
 
-/* Status card expands for error logs */
+/* Status card expands for error logs. */
 .status-card {
   text-align: center;
 }
@@ -107,7 +107,7 @@ body {
   text-align: left;
 }
 
-/* Help card */
+/* Help card. */
 .help-card .card-muted {
   margin-bottom: 0;
 }
@@ -133,7 +133,7 @@ body {
   color: #1a1a1a;
 }
 
-/* Header */
+/* Header. */
 .header {
   display: flex;
   justify-content: space-between;
@@ -185,7 +185,7 @@ body {
   opacity: 1;
 }
 
-/* Card */
+/* Card. */
 .card {
   background: #fff;
   border: 1px solid #e0ddd6;
@@ -220,7 +220,7 @@ body {
   line-height: 1.6;
 }
 
-/* Tabs */
+/* Tabs. */
 .tabs {
   display: flex;
   gap: 0;
@@ -279,7 +279,7 @@ body {
 .tab-content { display: none; padding-top: 24px; }
 .tab-content.active { display: block; }
 
-/* Forms */
+/* Forms. */
 label {
   display: block;
   font-size: 10px;
@@ -359,7 +359,7 @@ textarea {
   resize: vertical;
 }
 
-/* Checkbox improvements */
+/* Checkbox improvements. */
 .checkbox-label {
   display: flex;
   align-items: center;
@@ -402,14 +402,14 @@ textarea {
   padding: 0;
 }
 
-/* Fieldset Reset */
+/* Fieldset Reset. */
 fieldset {
   border: none;
   padding: 0;
   margin: 0;
 }
 
-/* Buttons */
+/* Buttons. */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -490,14 +490,20 @@ fieldset {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+  align-items: center;
   margin-top: 20px;
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: 12px;
 }
 
 .align-end {
   align-self: flex-end;
 }
 
-/* Action Bar */
+/* Action Bar. */
 .action-bar {
   display: flex;
   align-items: center;
@@ -510,7 +516,7 @@ fieldset {
   border-radius: 6px;
 }
 
-/* Status Badge with scrollable log */
+/* Status Badge with scrollable log. */
 .status-badge {
   display: inline-flex;
   align-items: center;
@@ -549,7 +555,7 @@ fieldset {
   color: #f4f1eb;
 }
 
-/* Status Log Display */
+/* Status Log Display. */
 .status-log {
   margin-top: 12px;
   padding: 12px;
@@ -565,7 +571,7 @@ fieldset {
   word-break: break-word;
 }
 
-/* Wave Loader Animation */
+/* Wave Loader Animation. */
 .wave-loader {
   display: inline-flex;
   align-items: center;
@@ -590,7 +596,7 @@ fieldset {
   50% { opacity: 1; transform: scaleY(1); }
 }
 
-/* Code */
+/* Code. */
 code {
   font-family: inherit;
   font-size: 12px;
@@ -626,7 +632,7 @@ pre {
   min-height: 120px;
 }
 
-/* Sections */
+/* Sections. */
 .section {
   margin: 16px 0;
   padding: 16px;
@@ -670,7 +676,7 @@ pre {
   color: #1a1a1a;
 }
 
-/* Collapsible (alias) */
+/* Collapsible (alias). */
 .collapsible { margin: 16px 0; }
 
 .collapsible-toggle {
@@ -723,7 +729,7 @@ pre {
 
 .collapsible.open .collapsible-content { display: block; }
 
-/* Channel Sections */
+/* Channel Sections. */
 .channel-grid {
   display: grid;
   gap: 24px;
@@ -754,7 +760,7 @@ pre {
   color: #1a1a1a;
 }
 
-/* Pairing */
+/* Pairing. */
 .pairing-list {
   background: #f9f8f5;
   border: 1px solid #e0ddd6;
@@ -814,7 +820,7 @@ pre {
   font-size: 12px;
 }
 
-/* Manual Approval */
+/* Manual Approval. */
 .manual-approval {
   margin-top: 24px;
   padding: 20px;
@@ -823,7 +829,7 @@ pre {
   border-radius: 6px;
 }
 
-/* Grid */
+/* Grid. */
 .grid-2 {
   display: grid;
   gap: 16px;
@@ -833,7 +839,7 @@ pre {
   .grid-2 { grid-template-columns: 1fr 1fr; }
 }
 
-/* Backup Grid */
+/* Backup Grid. */
 .backup-grid {
   display: grid;
   gap: 24px;
@@ -857,7 +863,7 @@ pre {
   margin-bottom: 16px;
 }
 
-/* Console Form */
+/* Console Form. */
 .console-form {
   display: grid;
   gap: 16px;
@@ -871,7 +877,7 @@ pre {
   }
 }
 
-/* Config Path */
+/* Config Path. */
 .config-path {
   color: #555;
   font-size: 11px;
@@ -882,7 +888,7 @@ pre {
   border-radius: 4px;
 }
 
-/* Flex */
+/* Flex. */
 .flex { display: flex; }
 .flex-wrap { flex-wrap: wrap; }
 .items-center { align-items: center; }
@@ -891,7 +897,7 @@ pre {
 .gap-3 { gap: 12px; }
 .gap-4 { gap: 16px; }
 
-/* Spacing */
+/* Spacing. */
 .mt-2 { margin-top: 8px; }
 .mt-3 { margin-top: 12px; }
 .mt-4 { margin-top: 16px; }
@@ -900,7 +906,7 @@ pre {
 .mb-3 { margin-bottom: 12px; }
 .mb-4 { margin-bottom: 16px; }
 
-/* Text */
+/* Text. */
 .text-muted { 
   color: #555; 
   font-size: 12px;
@@ -910,7 +916,7 @@ pre {
 .text-success { color: #2e7d32; }
 .text-danger { color: #c62828; }
 
-/* Form row */
+/* Form row. */
 .form-row {
   display: grid;
   gap: 12px;
@@ -920,14 +926,18 @@ pre {
 
 @media (min-width: 600px) {
   .form-row {
-    grid-template-columns: 1fr 1fr auto;
+    grid-template-columns: 180px 1fr auto;
   }
+}
+
+.form-row .btn {
+  white-space: nowrap;
 }
 
 .console-select { flex: 2; }
 .console-arg { flex: 1; }
 
-/* Alert */
+/* Alert. */
 .alert {
   padding: 14px 16px;
   margin-bottom: 16px;
@@ -966,7 +976,7 @@ pre {
   color: #b71c1c;
 }
 
-/* Data table */
+/* Data table. */
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -988,13 +998,13 @@ pre {
   color: #f4f1eb;
 }
 
-/* Loading */
+/* Loading. */
 .loading {
   color: #666;
   font-style: normal;
 }
 
-/* Footer */
+/* Footer. */
 footer {
   text-align: center;
   padding: 24px 0;
@@ -1039,14 +1049,14 @@ footer a:focus-visible {
   color: #ccc;
 }
 
-/* Status Version */
+/* Status Version. */
 .status-version {
   font-size: 10px;
   opacity: 0.7;
   font-weight: 400;
 }
 
-/* Responsive adjustments */
+/* Responsive adjustments. */
 @media (max-width: 600px) {
   .container {
     padding: 16px;
@@ -1101,7 +1111,7 @@ footer a:focus-visible {
   }
 }
 
-/* High contrast mode support */
+/* High contrast mode support. */
 @media (prefers-contrast: high) {
   .btn:focus,
   input:focus,
@@ -1113,7 +1123,7 @@ footer a:focus-visible {
   }
 }
 
-/* Reduced motion support */
+/* Reduced motion support. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1122,4 +1132,627 @@ footer a:focus-visible {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ============================================
+   ENHANCED PAIRING UX STYLES
+   ============================================ */
+
+/* Pairing Header. */
+.pairing-header {
+  margin-bottom: 16px;
+}
+
+.pairing-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pairing-intro .card-muted {
+  margin-bottom: 0;
+}
+
+.pairing-help-tip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #f0f8ff;
+  border: 1px solid #b8d4ed;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #2c5282;
+}
+
+.help-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: #2c5282;
+  color: #fff;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Tab Badge for pending count. */
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: #e53e3e;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 9px;
+  line-height: 1;
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+/* Pairing Status Indicator. */
+.pairing-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 11px;
+  color: #666;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #a0aec0;
+}
+
+.pairing-status.refreshing .status-dot {
+  background: #3182ce;
+  animation: dot-pulse 1s ease-in-out infinite;
+}
+
+.pairing-status.success .status-dot {
+  background: #38a169;
+}
+
+.pairing-status.error .status-dot {
+  background: #e53e3e;
+}
+
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Enhanced Empty State. */
+.pairing-empty {
+  text-align: center;
+  padding: 32px 24px;
+  color: #666;
+}
+
+.pairing-empty .empty-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin-bottom: 6px;
+}
+
+.pairing-empty .empty-hint {
+  font-size: 11px;
+  color: #666;
+}
+
+/* Enhanced Pairing Item. */
+.pairing-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #e0ddd6;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  transition: all 0.15s ease;
+}
+
+.pairing-item:hover {
+  border-color: #999;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.pairing-item:last-child {
+  margin-bottom: 0;
+}
+
+.pairing-item.approving {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.pairing-item.approved {
+  background: #f0fff4;
+  border-color: #38a169;
+}
+
+.pairing-item.approved .pairing-code {
+  background: #38a169;
+}
+
+/* Copy button. */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  background: #f4f1eb;
+  border: 1px solid #d4d0c8;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  font-family: inherit;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  transition: all 0.15s ease;
+  min-width: 50px;
+}
+
+.copy-btn:hover {
+  background: #e8e4db;
+  border-color: #999;
+}
+
+.copy-btn.copied {
+  background: #38a169;
+  border-color: #38a169;
+  color: #fff;
+}
+
+/* Pairing Code with Copy. */
+.pairing-code-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pairing-code {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  background: #1a1a1a;
+  color: #fff;
+  padding: 6px 14px;
+  letter-spacing: 2px;
+  border-radius: 4px;
+  user-select: all;
+}
+
+/* Pairing Info. */
+.pairing-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.pairing-user {
+  color: #1a1a1a;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pairing-time {
+  font-size: 10px;
+  color: #888;
+}
+
+/* Button with icon. */
+.btn-icon {
+  display: inline-block;
+  margin-right: 4px;
+}
+
+.refresh-icon {
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.btn:active .refresh-icon {
+  transform: rotate(180deg);
+}
+
+/* ============================================
+   TOAST NOTIFICATION SYSTEM
+   ============================================ */
+
+.toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+  max-width: 360px;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #1a1a1a;
+  color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+  font-size: 12px;
+  line-height: 1.4;
+  pointer-events: auto;
+  animation: toast-slide-in 0.3s ease;
+  transform-origin: top right;
+}
+
+.toast.toast-exit {
+  animation: toast-slide-out 0.2s ease forwards;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes toast-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+.toast-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.toast-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.toast-message {
+  opacity: 0.9;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: #fff;
+  opacity: 0.6;
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.toast-close:hover {
+  opacity: 1;
+}
+
+.toast.toast-success {
+  background: #38a169;
+}
+
+.toast.toast-error {
+  background: #e53e3e;
+}
+
+.toast.toast-warning {
+  background: #d69e2e;
+}
+
+.toast.toast-info {
+  background: #3182ce;
+}
+
+/* ============================================
+   SETUP PROGRESS STEPS
+   ============================================ */
+
+.setup-steps {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f9f8f5;
+  border: 1px solid #e0ddd6;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.setup-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 11px;
+  color: #888;
+  white-space: nowrap;
+  position: relative;
+}
+
+.setup-step:not(:last-child)::after {
+  content: '\2192';
+  position: absolute;
+  right: -4px;
+  color: #ccc;
+}
+
+.setup-step .step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: #e0ddd6;
+  color: #666;
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.setup-step.active .step-number {
+  background: #1a1a1a;
+  color: #fff;
+}
+
+.setup-step.completed .step-number {
+  background: #38a169;
+  color: #fff;
+}
+
+.setup-step.active {
+  color: #1a1a1a;
+  font-weight: 500;
+}
+
+.setup-step.completed {
+  color: #38a169;
+}
+
+/* ============================================
+   CONNECTIVITY TEST
+   ============================================ */
+
+.connectivity-test {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f9f8f5;
+  border: 1px solid #e0ddd6;
+  border-radius: 6px;
+}
+
+.connectivity-test h4 {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e8e4db;
+  color: #888;
+}
+
+.test-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.test-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #e0ddd6;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.test-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #e0ddd6;
+  color: #666;
+}
+
+.test-item.pending .test-icon {
+  background: #e0ddd6;
+  color: #888;
+}
+
+.test-item.success .test-icon {
+  background: #38a169;
+  color: #fff;
+}
+
+.test-item.error .test-icon {
+  background: #e53e3e;
+  color: #fff;
+}
+
+.test-label {
+  flex: 1;
+  font-weight: 500;
+}
+
+.test-detail {
+  font-size: 11px;
+  color: #888;
+}
+
+/* ============================================
+   VALIDATION FEEDBACK
+   ============================================ */
+
+.form-field.has-error input,
+.form-field.has-error select,
+.form-field.has-error textarea {
+  border-color: #e53e3e;
+  background: #fff5f5;
+}
+
+.form-field.has-error input:focus,
+.form-field.has-error select:focus,
+.form-field.has-error textarea:focus {
+  box-shadow: 0 0 0 3px rgba(229, 62, 62, 0.15);
+}
+
+.field-error {
+  display: block;
+  font-size: 11px;
+  color: #e53e3e;
+  margin-top: 4px;
+}
+
+.form-field.has-success input,
+.form-field.has-success select {
+  border-color: #38a169;
+}
+
+.form-field .validation-icon {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 14px;
+}
+
+.form-field .validation-icon.success { color: #38a169; }
+.form-field .validation-icon.error { color: #e53e3e; }
+
+/* ============================================
+   MOBILE PAIRING IMPROVEMENTS
+   ============================================ */
+
+@media (max-width: 600px) {
+  .pairing-item {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  
+  .pairing-item .pairing-channel {
+    justify-self: start;
+  }
+  
+  .pairing-item .pairing-code-wrapper {
+    justify-self: start;
+  }
+  
+  .pairing-item .btn {
+    justify-self: stretch;
+    width: 100%;
+  }
+  
+  .pairing-status {
+    display: none;
+  }
+  
+  .toast-container {
+    left: 10px;
+    right: 10px;
+    max-width: none;
+  }
+  
+  .pairing-help-tip {
+    flex-direction: column;
+    text-align: center;
+  }
+}
+
+/* ============================================
+   LOADING OVERLAY
+   ============================================ */
+
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(26, 26, 26, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s ease;
+}
+
+.loading-overlay.active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.loading-spinner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  color: #fff;
+}
+
+.loading-spinner .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255,255,255,0.2);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loading-spinner .loading-text {
+  font-size: 13px;
 }
