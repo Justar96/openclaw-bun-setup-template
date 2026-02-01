@@ -6,6 +6,15 @@
   "deploy": {
     "healthcheckPath": "/setup/healthz",
     "healthcheckTimeout": 300,
-    "restartPolicyType": "on_failure"
+    "restartPolicyType": "on_failure",
+    "envVars": {
+      "PORT": "8080",
+      "OPENCLAW_PUBLIC_PORT": "8080",
+      "OPENCLAW_STATE_DIR": "/data/.openclaw",
+      "OPENCLAW_WORKSPACE_DIR": "/data/workspace",
+      "OPENCLAW_NODE": "bun",
+      "INTERNAL_GATEWAY_PORT": "18789",
+      "INTERNAL_GATEWAY_HOST": "127.0.0.1"
+    }
   }
 }
