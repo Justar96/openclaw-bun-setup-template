@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { IncomingMessage, ServerResponse, ClientRequest } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 
 import express, { Request, Response, NextFunction, Application } from "express";
@@ -624,24 +624,6 @@ const proxy = httpProxy.createProxyServer({
   target: GATEWAY_TARGET,
   ws: true,
   xfwd: true,
-  changeOrigin: false, // Keep original host header
-});
-
-// Enhance forwarded headers for the gateway.
-proxy.on("proxyReq", (proxyReq: ClientRequest, req: IncomingMessage) => {
-  // Preserve existing X-Forwarded-For or create from connection
-  const existingFwd = req.headers["x-forwarded-for"];
-  const clientIp = typeof existingFwd === "string" 
-    ? existingFwd.split(",")[0].trim() 
-    : req.socket?.remoteAddress || "unknown";
-  
-  // Ensure X-Real-IP is set (many proxies use this)
-  if (!proxyReq.getHeader("x-real-ip")) {
-    proxyReq.setHeader("X-Real-IP", clientIp);
-  }
-  
-  // Mark as coming from trusted internal wrapper
-  proxyReq.setHeader("X-Forwarded-By", "openclaw-wrapper");
 });
 
 proxy.on("error", (err: Error, _req: IncomingMessage, _res: ServerResponse | Socket) => {
