@@ -193,16 +193,6 @@ app.post("/setup/api/run", requireSetupAuth, async (req: Request, res: Response)
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
-      
-      // Trust Railway's internal proxy network (CGNAT range) for forwarded headers.
-      // Include 10.0.0.0/8 for other cloud providers that use private networks.
-      const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
-      const proxiesJson = JSON.stringify(trustedProxies);
-      console.log(`[setup] configuring trustedProxies: ${proxiesJson}`);
-      const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
-      console.log(`[setup] trustedProxies set: exit=${r1.code}`);
-      const r2 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.trustProxy", "true"]));
-      console.log(`[setup] trustProxy set: exit=${r2.code}`);
 
       const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";

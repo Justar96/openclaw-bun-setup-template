@@ -6,7 +6,6 @@ import type { CommandResult, GatewayResult, GatewayState, WaitForGatewayOptions 
 import { sleep } from "./utils.js";
 import {
   clawArgs,
-  configPath,
   ensureDirectories,
   getChildEnv,
   GATEWAY_TARGET,
@@ -126,55 +125,28 @@ async function waitForGatewayReady(opts: WaitForGatewayOptions = {}): Promise<bo
 /** Configure trusted proxies for Railway's internal network. */
 async function configureTrustedProxies(): Promise<void> {
   // Railway uses CGNAT range 100.64.0.0/10 for internal routing.
-  // Also trust localhost since the wrapper proxies from 127.0.0.1.
+  // This is optional - the gateway works without it, but logs warnings.
   const trustedProxies = ["100.64.0.0/10", "127.0.0.1", "::1", "10.0.0.0/8"];
   const proxiesJson = JSON.stringify(trustedProxies);
   
   console.log(`[gateway] configuring trustedProxies: ${proxiesJson}`);
-  console.log(`[gateway] config path: ${configPath()}`);
   
-  // Try setting via CLI first
+  // Try setting via CLI - if it fails, just log and continue
   const r1 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", proxiesJson]));
-  console.log(`[gateway] trustedProxies CLI set: exit=${r1.code} output=${r1.output.trim() || '(none)'}`);
-  
-  // Also enable trust proxy mode if the gateway supports it
-  const r2 = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.trustProxy", "true"]));
-  console.log(`[gateway] trustProxy CLI set: exit=${r2.code} output=${r2.output.trim() || '(none)'}`);
-  
-  // Fallback: directly modify the config file if CLI failed or as additional insurance
-  try {
-    const cfgPath = configPath();
-    if (fs.existsSync(cfgPath)) {
-      const content = fs.readFileSync(cfgPath, "utf8");
-      let config: Record<string, unknown>;
-      try {
-        config = JSON.parse(content);
-      } catch {
-        console.log(`[gateway] config file is not valid JSON, skipping direct write`);
-        return;
-      }
-      
-      // Ensure gateway section exists
-      if (!config.gateway || typeof config.gateway !== "object") {
-        config.gateway = {};
-      }
-      const gw = config.gateway as Record<string, unknown>;
-      
-      // Set trustedProxies
-      gw.trustedProxies = trustedProxies;
-      gw.trustProxy = true;
-      
-      // Write back
-      fs.writeFileSync(cfgPath, JSON.stringify(config, null, 2), { encoding: "utf8" });
-      console.log(`[gateway] trustedProxies written directly to config file`);
-    }
-  } catch (err) {
-    console.error(`[gateway] failed to write trustedProxies to config file:`, err);
+  if (r1.code !== 0) {
+    console.log(`[gateway] trustedProxies set failed (non-critical): ${r1.output.trim()}`);
+    return;
   }
-  
-  // Verify the settings were applied
-  const verify = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", "gateway.trustedProxies"]));
-  console.log(`[gateway] trustedProxies verify: ${verify.output.trim()}`);
+  console.log(`[gateway] trustedProxies set successfully`);
+}
+
+/** Clean up invalid config keys before starting the gateway. */
+async function cleanupInvalidConfigKeys(): Promise<void> {
+  console.log(`[gateway] running doctor --fix to clean up any invalid config keys`);
+  const r = await runCmd(OPENCLAW_NODE, clawArgs(["doctor", "--fix"]));
+  if (r.code !== 0) {
+    console.log(`[gateway] doctor --fix exit=${r.code} (may be expected if no issues)`);
+  }
 }
 
 /** Start the gateway process if it is not already running. */
@@ -184,7 +156,11 @@ async function startGateway(): Promise<void> {
 
   ensureDirectories();
 
-  // Ensure trustedProxies is configured before starting.
+  // Clean up any invalid config keys first (e.g., from previous buggy versions)
+  await cleanupInvalidConfigKeys();
+
+  // Optional: configure trustedProxies if not already set
+  // This is a warning-only feature - gateway works without it
   await configureTrustedProxies();
 
   const args = [
