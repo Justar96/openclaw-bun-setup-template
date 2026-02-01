@@ -34,6 +34,7 @@ The service runs a small web server that:
 Then just hit `https://<your-app>.up.railway.app/setup`, finish the wizard, and you're live. The Control UI is at `/openclaw`.
 
 Note: This repo includes a Dockerfile used by Railway and CI for container builds.
+Note: Railway domains are created from the UI (Settings → Networking → Generate Domain); they are not auto-provisioned by templates or `railway.json`.
 
 ## Getting your bot tokens
 

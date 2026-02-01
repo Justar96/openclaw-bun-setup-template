@@ -315,7 +315,9 @@ async function configureDiscord(
   }
 
   // Add DM allowlist entries when policy requires them.
-  if (dmPolicy === "allowlist" && payload.discordAllowFrom?.trim()) {
+  if (dmPolicy === "open") {
+    cfgObj.dm.allowFrom = ["*"];
+  } else if (dmPolicy === "allowlist" && payload.discordAllowFrom?.trim()) {
     cfgObj.dm.allowFrom = parseCommaSeparated(payload.discordAllowFrom);
   }
 
