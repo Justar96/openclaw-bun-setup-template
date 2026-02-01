@@ -2,14 +2,9 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { IncomingMessage, ServerResponse, ClientRequest } from "node:http";
-import type { Socket } from "node:net";
 
-import express, { Request, Response, NextFunction, Application } from "express";
-import httpProxy from "http-proxy";
 import * as tar from "tar";
 
-// Local wrapper types.
 import type {
   ChannelResult,
   ConfigRawPayload,
@@ -22,7 +17,7 @@ import type {
   TelegramConfig,
 } from "./types.js";
 
-import { isUnderDir, looksSafeTarPath, readBodyBuffer, redactSecrets } from "./utils.js";
+import { isUnderDir, looksSafeTarPath, redactSecrets } from "./utils.js";
 
 import {
   ALLOWED_CONSOLE_COMMANDS,
@@ -33,6 +28,7 @@ import {
   DEV_MODE,
   ensureDirectories,
   GATEWAY_TARGET,
+  INTERNAL_GATEWAY_HOST,
   INTERNAL_GATEWAY_PORT,
   isConfigured,
   OPENCLAW_ENTRY,
@@ -57,12 +53,17 @@ import {
 } from "./gateway.js";
 
 const MAX_IMPORT_BYTES = 250 * 1024 * 1024;
+const MAX_JSON_BYTES = 1024 * 1024; // 1MB
 
-function getAuthHeader(req: Request): string {
-  const header = req.headers.authorization;
-  if (Array.isArray(header)) return header[0] ?? "";
-  return header ?? "";
-}
+// Content type mappings for static files.
+const CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+};
+
+// --- Authentication helpers ---
 
 function decodeBasicPassword(header: string): string | null {
   const [scheme, encoded] = header.trim().split(/\s+/, 2);
@@ -84,149 +85,95 @@ function safeEqual(a: string, b: string): boolean {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
-function sendUiFile(res: Response, fileName: string, contentType: string): void {
+function checkSetupAuth(req: Request): Response | null {
+  if (DEV_MODE) return null;
+
+  if (!SETUP_PASSWORD) {
+    return new Response(
+      "SETUP_PASSWORD is not set. Set it in Railway Variables before using /setup.",
+      { status: 500, headers: { "Content-Type": "text/plain" } }
+    );
+  }
+
+  const header = req.headers.get("authorization") || "";
+  const password = decodeBasicPassword(header);
+  if (password === null) {
+    return new Response("Auth required", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="OpenClaw Setup"',
+        "Content-Type": "text/plain",
+      },
+    });
+  }
+  if (!safeEqual(password, SETUP_PASSWORD)) {
+    return new Response("Invalid password", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="OpenClaw Setup"',
+        "Content-Type": "text/plain",
+      },
+    });
+  }
+
+  return null;
+}
+
+// --- Response helpers ---
+
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function text(body: string, status = 200): Response {
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/plain" },
+  });
+}
+
+function redirect(location: string): Response {
+  return new Response(null, {
+    status: 302,
+    headers: { Location: location },
+  });
+}
+
+function serveFile(fileName: string): Response {
   try {
     const filePath = path.join(UI_DIR, fileName);
     const body = fs.readFileSync(filePath);
-    res.type(contentType).send(body);
-  } catch (err) {
-    console.error(`[ui] failed to read ${fileName}:`, err);
-    res.status(500).type("text/plain").send("UI asset unavailable.");
-  }
-}
-
-// Authentication guard for setup routes.
-function requireSetupAuth(req: Request, res: Response, next: NextFunction): void {
-  if (DEV_MODE) {
-    next();
-    return;
-  }
-
-  if (!SETUP_PASSWORD) {
-    res
-      .status(500)
-      .type("text/plain")
-      .send("SETUP_PASSWORD is not set. Set it in Railway Variables before using /setup.");
-    return;
-  }
-
-  const header = getAuthHeader(req);
-  const password = decodeBasicPassword(header);
-  if (password === null) {
-    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Setup"');
-    res.status(401).send("Auth required");
-    return;
-  }
-  if (!safeEqual(password, SETUP_PASSWORD)) {
-    res.set("WWW-Authenticate", 'Basic realm="OpenClaw Setup"');
-    res.status(401).send("Invalid password");
-    return;
-  }
-
-  next();
-}
-
-const app: Application = express();
-app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
-
-// Health check used by Railway.
-app.get("/setup/healthz", (_req: Request, res: Response) => {
-  res.json({ ok: true });
-});
-
-app.get("/setup/ui/styles.css", requireSetupAuth, (_req: Request, res: Response) => {
-  sendUiFile(res, "styles.css", "text/css");
-});
-
-app.get("/setup/ui/app.js", requireSetupAuth, (_req: Request, res: Response) => {
-  sendUiFile(res, "app.js", "application/javascript");
-});
-
-// Legacy route preserved for older bookmarks.
-app.get("/setup/app.js", requireSetupAuth, (_req: Request, res: Response) => {
-  sendUiFile(res, "app.js", "application/javascript");
-});
-
-app.get("/setup", requireSetupAuth, (_req: Request, res: Response) => {
-  sendUiFile(res, "setup.html", "text/html");
-});
-
-app.get("/setup/api/status", requireSetupAuth, async (_req: Request, res: Response) => {
-  const [version, channelsHelp] = await Promise.all([
-    runCmd(OPENCLAW_NODE, clawArgs(["--version"])),
-    runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"])),
-  ]);
-
-  res.json({
-    configured: isConfigured(),
-    gatewayTarget: GATEWAY_TARGET,
-    openclawVersion: version.output.trim(),
-    channelsAddHelp: channelsHelp.output,
-    authGroups: AUTH_GROUPS,
-  });
-});
-
-app.post("/setup/api/run", requireSetupAuth, async (req: Request, res: Response) => {
-  try {
-    if (isConfigured()) {
-      await ensureGatewayRunning();
-      return res.json({
-        ok: true,
-        output: "Already configured.\nUse Reset setup if you want to rerun onboarding.\n",
-      });
-    }
-
-    ensureDirectories();
-
-    const payload: OnboardPayload =
-      req.body && typeof req.body === "object" ? (req.body as OnboardPayload) : {};
-    const onboardArgs = buildOnboardArgs(payload);
-    const onboard = await runCmd(OPENCLAW_NODE, clawArgs(onboardArgs));
-
-    let extra = "";
-    const ok = onboard.code === 0 && isConfigured();
-
-    if (ok) {
-      // Persist gateway settings for the CLI.
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
-
-      const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
-      const helpText = channelsHelp.output || "";
-      const supports = (name: string): boolean => helpText.includes(name);
-
-      // Configure Telegram if requested.
-      if (payload.telegramToken?.trim()) {
-        extra += await configureTelegram(payload, supports);
-      }
-
-      // Configure Discord if requested.
-      if (payload.discordToken?.trim()) {
-        extra += await configureDiscord(payload, supports);
-      }
-
-      // Configure Slack if requested.
-      if (payload.slackBotToken?.trim() || payload.slackAppToken?.trim()) {
-        extra += await configureSlack(payload, supports);
-      }
-
-      await restartGateway();
-    }
-
-    return res.status(ok ? 200 : 500).json({
-      ok,
-      output: `${onboard.output}${extra}`,
+    const ext = path.extname(fileName);
+    const contentType = CONTENT_TYPES[ext] || "application/octet-stream";
+    return new Response(body, {
+      headers: { "Content-Type": contentType },
     });
   } catch (err) {
-    console.error("[/setup/api/run] error:", err);
-    return res.status(500).json({ ok: false, output: `Internal error: ${String(err)}` });
+    console.error(`[ui] failed to read ${fileName}:`, err);
+    return text("UI asset unavailable.", 500);
   }
-});
+}
 
-// Helpers for channel configuration during onboarding.
+// --- JSON body parser ---
+
+async function parseJsonBody<T>(req: Request): Promise<T> {
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  if (contentLength > MAX_JSON_BYTES) {
+    throw new Error("Request body too large");
+  }
+  
+  const body = await req.text();
+  if (body.length > MAX_JSON_BYTES) {
+    throw new Error("Request body too large");
+  }
+  
+  return body ? JSON.parse(body) as T : ({} as T);
+}
+
+// --- Channel configuration helpers ---
 
 async function configureTelegram(
   payload: OnboardPayload,
@@ -264,9 +211,6 @@ async function configureDiscord(
   }
 
   const token = payload.discordToken!.trim();
-  
-  // Use simple config matching the original template - just token and pairing mode.
-  // This avoids validation issues with complex DM policy settings.
   const cfgObj: DiscordConfig = {
     enabled: true,
     token,
@@ -310,22 +254,115 @@ async function configureSlack(
     `\n[slack verify] exit=${get.code} (output ${get.output.length} chars)\n${get.output || "(no output)"}`;
 }
 
-// Diagnostics for setup troubleshooting.
+// --- Route handlers ---
 
-app.get("/setup/api/debug", requireSetupAuth, async (_req: Request, res: Response) => {
+async function handleHealthz(): Promise<Response> {
+  return json({ ok: true });
+}
+
+async function handleSetupPage(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+  return serveFile("setup.html");
+}
+
+async function handleSetupCss(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+  return serveFile("styles.css");
+}
+
+async function handleSetupJs(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+  return serveFile("app.js");
+}
+
+async function handleApiStatus(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+
+  const [version, channelsHelp] = await Promise.all([
+    runCmd(OPENCLAW_NODE, clawArgs(["--version"])),
+    runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"])),
+  ]);
+
+  return json({
+    configured: isConfigured(),
+    gatewayTarget: GATEWAY_TARGET,
+    openclawVersion: version.output.trim(),
+    channelsAddHelp: channelsHelp.output,
+    authGroups: AUTH_GROUPS,
+  });
+}
+
+async function handleApiRun(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+
+  try {
+    if (isConfigured()) {
+      await ensureGatewayRunning();
+      return json({
+        ok: true,
+        output: "Already configured.\nUse Reset setup if you want to rerun onboarding.\n",
+      });
+    }
+
+    ensureDirectories();
+
+    const payload = await parseJsonBody<OnboardPayload>(req);
+    const onboardArgs = buildOnboardArgs(payload);
+    const onboard = await runCmd(OPENCLAW_NODE, clawArgs(onboardArgs));
+
+    let extra = "";
+    const ok = onboard.code === 0 && isConfigured();
+
+    if (ok) {
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+
+      const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
+      const helpText = channelsHelp.output || "";
+      const supports = (name: string): boolean => helpText.includes(name);
+
+      if (payload.telegramToken?.trim()) {
+        extra += await configureTelegram(payload, supports);
+      }
+
+      if (payload.discordToken?.trim()) {
+        extra += await configureDiscord(payload, supports);
+      }
+
+      if (payload.slackBotToken?.trim() || payload.slackAppToken?.trim()) {
+        extra += await configureSlack(payload, supports);
+      }
+
+      await restartGateway();
+    }
+
+    return json({ ok, output: `${onboard.output}${extra}` }, ok ? 200 : 500);
+  } catch (err) {
+    console.error("[/setup/api/run] error:", err);
+    return json({ ok: false, output: `Internal error: ${String(err)}` }, 500);
+  }
+}
+
+async function handleApiDebug(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+
   const [v, help] = await Promise.all([
     runCmd(OPENCLAW_NODE, clawArgs(["--version"])),
     runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"])),
   ]);
 
-  const isBun = typeof Bun !== "undefined";
-  const runtime = isBun ? "bun" : "node";
-  const version = isBun ? Bun.version : process.version;
-
-  res.json({
+  return json({
     wrapper: {
-      runtime,
-      version,
+      runtime: "bun",
+      version: Bun.version,
       port: PORT,
       stateDir: STATE_DIR,
       workspaceDir: WORKSPACE_DIR,
@@ -343,39 +380,37 @@ app.get("/setup/api/debug", requireSetupAuth, async (_req: Request, res: Respons
       channelsAddHelpIncludesTelegram: help.output.includes("telegram"),
     },
   });
-});
+}
 
-// Restricted console commands for the setup UI.
+async function handleApiConsoleRun(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.post("/setup/api/console/run", requireSetupAuth, async (req: Request, res: Response) => {
-  const payload: ConsolePayload =
-    req.body && typeof req.body === "object" ? (req.body as ConsolePayload) : {};
+  const payload = await parseJsonBody<ConsolePayload>(req);
   const cmd = String(payload.cmd || "").trim();
   const arg = String(payload.arg || "").trim();
 
   if (!ALLOWED_CONSOLE_COMMANDS.has(cmd)) {
-    return res.status(400).json({ ok: false, error: "Command not allowed" });
+    return json({ ok: false, error: "Command not allowed" }, 400);
   }
 
   try {
-    // Gateway lifecycle commands.
     if (cmd === "gateway.restart") {
       await restartGateway();
-      return res.json({ ok: true, output: "Gateway restarted (wrapper-managed).\n" });
+      return json({ ok: true, output: "Gateway restarted (wrapper-managed).\n" });
     }
     if (cmd === "gateway.stop") {
       await stopGateway();
-      return res.json({ ok: true, output: "Gateway stopped (wrapper-managed).\n" });
+      return json({ ok: true, output: "Gateway stopped (wrapper-managed).\n" });
     }
     if (cmd === "gateway.start") {
       const r = await ensureGatewayRunning();
-      return res.json({
+      return json({
         ok: Boolean(r.ok),
         output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n`,
       });
     }
 
-    // OpenClaw CLI commands.
     const cmdMap: Record<string, string[]> = {
       "openclaw.version": ["--version"],
       "openclaw.status": ["status"],
@@ -385,54 +420,56 @@ app.post("/setup/api/console/run", requireSetupAuth, async (req: Request, res: R
 
     if (cmdMap[cmd]) {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(cmdMap[cmd]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
     if (cmd === "openclaw.logs.tail") {
       const lines = Math.max(50, Math.min(1000, Number.parseInt(arg || "200", 10) || 200));
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["logs", "--tail", String(lines)]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
     if (cmd === "openclaw.config.get") {
-      if (!arg) return res.status(400).json({ ok: false, error: "Missing config path" });
+      if (!arg) return json({ ok: false, error: "Missing config path" }, 400);
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "get", arg]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
     if (cmd === "openclaw.pairing.list") {
       const channel = arg || "discord";
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "list", channel]));
-      return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: redactSecrets(r.output) });
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
-    return res.status(400).json({ ok: false, error: "Unhandled command" });
+    return json({ ok: false, error: "Unhandled command" }, 400);
   } catch (err) {
-    return res.status(500).json({ ok: false, error: String(err) });
+    return json({ ok: false, error: String(err) }, 500);
   }
-});
+}
 
-// Raw config read/write endpoints.
+async function handleApiConfigRaw(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.get("/setup/api/config/raw", requireSetupAuth, async (_req: Request, res: Response) => {
   try {
     const p = configPath();
     const { exists, content } = readConfigFile(p);
-    res.json({ ok: true, path: p, exists, content });
+    return json({ ok: true, path: p, exists, content });
   } catch (err) {
-    res.status(500).json({ ok: false, error: String(err) });
+    return json({ ok: false, error: String(err) }, 500);
   }
-});
+}
 
-app.post("/setup/api/config/raw", requireSetupAuth, async (req: Request, res: Response): Promise<void> => {
+async function handleApiConfigRawPost(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+
   try {
-    const payload: ConfigRawPayload =
-      req.body && typeof req.body === "object" ? (req.body as ConfigRawPayload) : {};
+    const payload = await parseJsonBody<ConfigRawPayload>(req);
     const content = String(payload.content || "");
 
     if (content.length > 500_000) {
-      res.status(413).json({ ok: false, error: "Config too large" });
-      return;
+      return json({ ok: false, error: "Config too large" }, 413);
     }
 
     const p = configPath();
@@ -442,16 +479,18 @@ app.post("/setup/api/config/raw", requireSetupAuth, async (req: Request, res: Re
       await restartGateway();
     }
 
-    res.json({ ok: true, path: p });
+    return json({ ok: true, path: p });
   } catch (err) {
-    res.status(500).json({ ok: false, error: String(err) });
+    return json({ ok: false, error: String(err) }, 500);
   }
-});
+}
 
-// Pairing discovery and approval endpoints.
+async function handleApiPairingList(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.get("/setup/api/pairing/list", requireSetupAuth, async (req: Request, res: Response) => {
-  const channel = typeof req.query.channel === "string" ? req.query.channel.trim() : "";
+  const url = new URL(req.url);
+  const channel = url.searchParams.get("channel")?.trim() || "";
   const channels = channel ? [channel] : ["discord", "telegram", "slack", "whatsapp", "signal", "imessage"];
 
   const results: Record<string, ChannelResult> = {};
@@ -487,44 +526,42 @@ app.get("/setup/api/pairing/list", requireSetupAuth, async (req: Request, res: R
     results[ch] = { ok: r.code === 0, pending, raw: output };
   }
 
-  res.json({ ok: true, channels: results });
-});
+  return json({ ok: true, channels: results });
+}
 
-app.post("/setup/api/pairing/approve", requireSetupAuth, async (req: Request, res: Response) => {
-  const payload: PairingApprovePayload =
-    req.body && typeof req.body === "object" ? (req.body as PairingApprovePayload) : {};
+async function handleApiPairingApprove(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
+
+  const payload = await parseJsonBody<PairingApprovePayload>(req);
   const channel = String(payload.channel ?? "").trim();
   const code = String(payload.code ?? "").trim();
 
   if (!channel || !code) {
-    return res.status(400).json({ ok: false, error: "Missing channel or code" });
+    return json({ ok: false, error: "Missing channel or code" }, 400);
   }
 
   const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "approve", String(channel), String(code)]));
-  return res.status(r.code === 0 ? 200 : 500).json({ ok: r.code === 0, output: r.output });
-});
+  return json({ ok: r.code === 0, output: r.output }, r.code === 0 ? 200 : 500);
+}
 
-// Setup reset endpoint.
+async function handleApiReset(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.post("/setup/api/reset", requireSetupAuth, async (_req: Request, res: Response) => {
   try {
     deleteConfigFile(configPath());
-    res.type("text/plain").send("OK - deleted config file. You can rerun setup now.");
+    return text("OK - deleted config file. You can rerun setup now.");
   } catch (err) {
-    res.status(500).type("text/plain").send(String(err));
+    return text(String(err), 500);
   }
-});
+}
 
-// Backup export/import endpoints.
+async function handleExport(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.get("/setup/export", requireSetupAuth, async (_req: Request, res: Response) => {
   ensureDirectories();
-
-  res.setHeader("content-type", "application/gzip");
-  res.setHeader(
-    "content-disposition",
-    `attachment; filename="openclaw-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`
-  );
 
   const stateAbs = path.resolve(STATE_DIR);
   const workspaceAbs = path.resolve(WORKSPACE_DIR);
@@ -543,42 +580,56 @@ app.get("/setup/export", requireSetupAuth, async (_req: Request, res: Response) 
   }
 
   paths = Array.from(new Set(paths));
+
+  // Create tar stream directly to buffer
+  const chunks: Buffer[] = [];
   const stream = tar.c({ gzip: true, portable: true, noMtime: true, cwd, onwarn: () => {} }, paths);
 
-  stream.on("error", (err: unknown) => {
-    console.error("[export]", err);
-    if (!res.headersSent) res.status(500);
-    res.end(String(err));
+  return new Promise((resolve) => {
+    stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+    stream.on("end", () => {
+      const buffer = Buffer.concat(chunks);
+      resolve(
+        new Response(buffer, {
+          headers: {
+            "Content-Type": "application/gzip",
+            "Content-Disposition": `attachment; filename="openclaw-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.tar.gz"`,
+          },
+        })
+      );
+    });
+    stream.on("error", (err: unknown) => {
+      console.error("[export]", err);
+      resolve(text(String(err), 500));
+    });
   });
+}
 
-  stream.pipe(res);
-});
+async function handleImport(req: Request): Promise<Response> {
+  const authErr = checkSetupAuth(req);
+  if (authErr) return authErr;
 
-app.post("/setup/import", requireSetupAuth, async (req: Request, res: Response): Promise<void> => {
   let tmpPath: string | null = null;
   try {
     const dataRoot = "/data";
 
     if (!isUnderDir(STATE_DIR, dataRoot) || !isUnderDir(WORKSPACE_DIR, dataRoot)) {
-      res
-        .status(400)
-        .type("text/plain")
-        .send("Import is only supported when OPENCLAW_STATE_DIR and OPENCLAW_WORKSPACE_DIR are under /data (Railway volume).\n");
-      return;
+      return text(
+        "Import is only supported when OPENCLAW_STATE_DIR and OPENCLAW_WORKSPACE_DIR are under /data (Railway volume).\n",
+        400
+      );
     }
 
     await stopGateway();
 
-    const contentLength = Number(req.headers["content-length"] ?? 0);
+    const contentLength = Number(req.headers.get("content-length") ?? 0);
     if (contentLength && contentLength > MAX_IMPORT_BYTES) {
-      res.status(413).type("text/plain").send("Payload too large\n");
-      return;
+      return text("Payload too large\n", 413);
     }
 
-    const buf = await readBodyBuffer(req, MAX_IMPORT_BYTES);
+    const buf = Buffer.from(await req.arrayBuffer());
     if (!buf.length) {
-      res.status(400).type("text/plain").send("Empty body\n");
-      return;
+      return text("Empty body\n", 400);
     }
 
     tmpPath = path.join(os.tmpdir(), `openclaw-import-${Date.now()}.tar.gz`);
@@ -601,12 +652,12 @@ app.post("/setup/import", requireSetupAuth, async (req: Request, res: Response):
       await restartGateway();
     }
 
-    res.type("text/plain").send("OK - imported backup into /data and restarted gateway.\n");
+    return text("OK - imported backup into /data and restarted gateway.\n");
   } catch (err) {
     console.error("[import]", err);
     const message = err instanceof Error ? err.message : String(err);
     const status = message.includes("payload too large") ? 413 : 500;
-    res.status(status).type("text/plain").send(message);
+    return text(message, status);
   } finally {
     if (tmpPath) {
       try {
@@ -616,95 +667,244 @@ app.post("/setup/import", requireSetupAuth, async (req: Request, res: Response):
       }
     }
   }
-});
+}
 
-// Reverse proxy to the internal gateway.
+// --- Gateway proxy ---
 
-const proxy = httpProxy.createProxyServer({
-  target: GATEWAY_TARGET,
-  ws: true,
-  xfwd: true,
-  changeOrigin: false, // Keep original host header
-});
+async function proxyToGateway(req: Request, server: { requestIP: (req: Request) => { address: string } | null }): Promise<Response> {
+  const url = new URL(req.url);
+  const targetUrl = `${GATEWAY_TARGET}${url.pathname}${url.search}`;
 
-// Enhance forwarded headers for the gateway.
-proxy.on("proxyReq", (proxyReq: ClientRequest, req: IncomingMessage) => {
-  // Preserve existing X-Forwarded-For or create from connection
-  const existingFwd = req.headers["x-forwarded-for"];
-  const clientIp = typeof existingFwd === "string" 
-    ? existingFwd.split(",")[0].trim() 
-    : req.socket?.remoteAddress || "unknown";
+  // Build forwarded headers
+  const headers = new Headers(req.headers);
   
-  // Ensure X-Real-IP is set (many proxies use this)
-  if (!proxyReq.getHeader("x-real-ip")) {
-    proxyReq.setHeader("X-Real-IP", clientIp);
-  }
+  // Get client IP
+  const clientInfo = server.requestIP(req);
+  const existingFwd = headers.get("x-forwarded-for");
+  const clientIp = existingFwd?.split(",")[0].trim() || clientInfo?.address || "unknown";
   
-  // Mark as coming from trusted internal wrapper
-  proxyReq.setHeader("X-Forwarded-By", "openclaw-wrapper");
-});
-
-proxy.on("error", (err: Error, _req: IncomingMessage, _res: ServerResponse | Socket) => {
-  console.error("[proxy]", err);
-});
-
-app.use(async (req: Request, res: Response) => {
-  if (!isConfigured() && !req.path.startsWith("/setup")) {
-    return res.redirect("/setup");
-  }
-
-  if (isConfigured()) {
-    try {
-      await ensureGatewayRunning();
-    } catch (err) {
-      return res.status(503).type("text/plain").send(`Gateway not ready: ${String(err)}`);
-    }
-  }
-
-  return proxy.web(req, res, { target: GATEWAY_TARGET });
-});
-
-// Wrapper startup logging and binding.
-
-const server = app.listen(PORT, "0.0.0.0", () => {
-  const isBun = typeof Bun !== "undefined";
-  const runtime = isBun ? `Bun ${Bun.version}` : `Node ${process.version}`;
-
-  console.log(`[wrapper] running on ${runtime}`);
-  console.log(`[wrapper] listening on :${PORT}`);
-  console.log(`[wrapper] state dir: ${STATE_DIR}`);
-  console.log(`[wrapper] workspace dir: ${WORKSPACE_DIR}`);
-  console.log(`[wrapper] gateway token: ${OPENCLAW_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
-  console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
-
-  if (DEV_MODE) {
-    console.log("[wrapper] DEV_MODE: auth bypass enabled for /setup");
-  } else if (!SETUP_PASSWORD) {
-    console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
-  }
-});
-
-server.on("error", (err: Error) => {
-  console.error("[wrapper] server error:", err);
-});
-
-server.on("upgrade", async (req: IncomingMessage, socket: Socket, head: Buffer) => {
-  if (!isConfigured()) {
-    socket.destroy();
-    return;
-  }
+  headers.set("X-Real-IP", clientIp);
+  headers.set("X-Forwarded-By", "openclaw-wrapper");
+  headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
+  headers.set("X-Forwarded-Host", url.host);
 
   try {
-    await ensureGatewayRunning();
-  } catch {
-    socket.destroy();
-    return;
-  }
+    const proxyRes = await fetch(targetUrl, {
+      method: req.method,
+      headers,
+      body: req.body,
+    });
 
-  proxy.ws(req, socket, head, { target: GATEWAY_TARGET });
+    // Clone response with all headers
+    const responseHeaders = new Headers(proxyRes.headers);
+    
+    return new Response(proxyRes.body, {
+      status: proxyRes.status,
+      statusText: proxyRes.statusText,
+      headers: responseHeaders,
+    });
+  } catch (err) {
+    console.error("[proxy]", err);
+    return text(`Gateway error: ${String(err)}`, 502);
+  }
+}
+
+// --- Main router ---
+
+type RouteHandler = (req: Request, server: { requestIP: (req: Request) => { address: string } | null }) => Promise<Response>;
+
+const routes: Array<{ method: string; pattern: RegExp; handler: RouteHandler }> = [
+  // Health check (no auth)
+  { method: "GET", pattern: /^\/setup\/healthz$/, handler: handleHealthz },
+  
+  // Static UI files
+  { method: "GET", pattern: /^\/setup$/, handler: handleSetupPage },
+  { method: "GET", pattern: /^\/setup\/ui\/styles\.css$/, handler: handleSetupCss },
+  { method: "GET", pattern: /^\/setup\/ui\/app\.js$/, handler: handleSetupJs },
+  { method: "GET", pattern: /^\/setup\/app\.js$/, handler: handleSetupJs }, // Legacy
+  
+  // API endpoints
+  { method: "GET", pattern: /^\/setup\/api\/status$/, handler: handleApiStatus },
+  { method: "POST", pattern: /^\/setup\/api\/run$/, handler: handleApiRun },
+  { method: "GET", pattern: /^\/setup\/api\/debug$/, handler: handleApiDebug },
+  { method: "POST", pattern: /^\/setup\/api\/console\/run$/, handler: handleApiConsoleRun },
+  { method: "GET", pattern: /^\/setup\/api\/config\/raw$/, handler: handleApiConfigRaw },
+  { method: "POST", pattern: /^\/setup\/api\/config\/raw$/, handler: handleApiConfigRawPost },
+  { method: "GET", pattern: /^\/setup\/api\/pairing\/list$/, handler: handleApiPairingList },
+  { method: "POST", pattern: /^\/setup\/api\/pairing\/approve$/, handler: handleApiPairingApprove },
+  { method: "POST", pattern: /^\/setup\/api\/reset$/, handler: handleApiReset },
+  
+  // Backup/restore
+  { method: "GET", pattern: /^\/setup\/export$/, handler: handleExport },
+  { method: "POST", pattern: /^\/setup\/import$/, handler: handleImport },
+];
+
+// --- WebSocket types and connections ---
+
+interface WsData {
+  url: string;
+  headers: Record<string, string>;
+}
+
+type ServerWs = import("bun").ServerWebSocket<WsData>;
+
+const wsConnections = new Map<ServerWs, WebSocket>();
+
+// --- Bun server ---
+
+const server = Bun.serve<WsData>({
+  port: PORT,
+  hostname: "0.0.0.0",
+
+  async fetch(req, server) {
+    const url = new URL(req.url);
+    const pathname = url.pathname;
+    const method = req.method;
+
+    // Handle WebSocket upgrade
+    if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      if (!isConfigured()) {
+        return new Response("Not configured", { status: 503 });
+      }
+
+      try {
+        await ensureGatewayRunning();
+      } catch (err) {
+        return new Response(`Gateway not ready: ${String(err)}`, { status: 503 });
+      }
+
+      // Upgrade to WebSocket
+      const wsData: WsData = {
+        url: `ws://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}${pathname}${url.search}`,
+        headers: Object.fromEntries(req.headers),
+      };
+      const success = server.upgrade(req, { data: wsData });
+
+      if (success) {
+        return undefined; // Bun handles the upgrade
+      }
+      return new Response("WebSocket upgrade failed", { status: 500 });
+    }
+
+    // Route matching
+    for (const route of routes) {
+      if (method === route.method && route.pattern.test(pathname)) {
+        return route.handler(req, server);
+      }
+    }
+
+    // Redirect to /setup if not configured
+    if (!isConfigured() && !pathname.startsWith("/setup")) {
+      return redirect("/setup");
+    }
+
+    // Proxy to gateway
+    if (isConfigured()) {
+      try {
+        await ensureGatewayRunning();
+      } catch (err) {
+        return text(`Gateway not ready: ${String(err)}`, 503);
+      }
+    }
+
+    return proxyToGateway(req, server);
+  },
+
+  websocket: {
+    async open(ws: ServerWs) {
+      const data = ws.data;
+      
+      try {
+        // Connect to gateway WebSocket
+        const gatewayWs = new WebSocket(data.url);
+        
+        gatewayWs.binaryType = "arraybuffer";
+        
+        gatewayWs.onopen = () => {
+          wsConnections.set(ws, gatewayWs);
+        };
+        
+        gatewayWs.onmessage = (event) => {
+          try {
+            if (typeof event.data === "string") {
+              ws.send(event.data);
+            } else if (event.data instanceof ArrayBuffer) {
+              ws.send(new Uint8Array(event.data));
+            }
+          } catch {
+            // Client disconnected
+          }
+        };
+        
+        gatewayWs.onclose = () => {
+          wsConnections.delete(ws);
+          try {
+            ws.close();
+          } catch {
+            // Already closed
+          }
+        };
+        
+        gatewayWs.onerror = (err) => {
+          console.error("[ws-proxy] gateway error:", err);
+          wsConnections.delete(ws);
+          try {
+            ws.close();
+          } catch {
+            // Already closed
+          }
+        };
+      } catch (err) {
+        console.error("[ws-proxy] connection error:", err);
+        ws.close();
+      }
+    },
+
+    message(ws: ServerWs, message: string | Buffer) {
+      const gatewayWs = wsConnections.get(ws);
+      if (gatewayWs && gatewayWs.readyState === WebSocket.OPEN) {
+        try {
+          if (typeof message === "string") {
+            gatewayWs.send(message);
+          } else {
+            gatewayWs.send(message);
+          }
+        } catch (err) {
+          console.error("[ws-proxy] send error:", err);
+        }
+      }
+    },
+
+    close(ws: ServerWs) {
+      const gatewayWs = wsConnections.get(ws);
+      if (gatewayWs) {
+        wsConnections.delete(ws);
+        try {
+          gatewayWs.close();
+        } catch {
+          // Already closed
+        }
+      }
+    },
+  },
 });
 
-// Shutdown hooks for Railway and local signals.
+// --- Startup logging ---
+
+console.log(`[wrapper] running on Bun ${Bun.version}`);
+console.log(`[wrapper] listening on :${PORT}`);
+console.log(`[wrapper] state dir: ${STATE_DIR}`);
+console.log(`[wrapper] workspace dir: ${WORKSPACE_DIR}`);
+console.log(`[wrapper] gateway token: ${OPENCLAW_GATEWAY_TOKEN ? "(set)" : "(missing)"}`);
+console.log(`[wrapper] gateway target: ${GATEWAY_TARGET}`);
+
+if (DEV_MODE) {
+  console.log("[wrapper] DEV_MODE: auth bypass enabled for /setup");
+} else if (!SETUP_PASSWORD) {
+  console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
+}
+
+// --- Shutdown hooks ---
 
 process.on("SIGTERM", () => {
   shutdownGateway();
@@ -716,8 +916,4 @@ process.on("SIGINT", () => {
   process.exit(0);
 });
 
-// Bun global typing for TS when running under Node.
-
-declare global {
-  const Bun: { version: string } | undefined;
-}
+export { server };

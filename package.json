@@ -12,14 +12,10 @@
     "smoke": "bun scripts/smoke.js"
   },
   "dependencies": {
-    "express": "^5.1.0",
-    "http-proxy": "^1.18.1",
     "tar": "^7.5.4"
   },
   "devDependencies": {
     "bun-types": "^1.1.0",
-    "@types/express": "^5.0.0",
-    "@types/http-proxy": "^1.17.15",
     "@types/node": "^22.10.0",
     "typescript": "^5.7.0"
   }
