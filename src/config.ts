@@ -51,6 +51,10 @@ const devOverride = process.env.DEV_MODE === "1";
 const nodeDev = process.env.NODE_ENV === "development";
 export const DEV_MODE: boolean = !inRailway && (devOverride || nodeDev);
 
+/** Enable proxy request metrics logging. */
+export const PROXY_DEBUG: boolean =
+  process.env.OPENCLAW_PROXY_DEBUG === "1" || process.env.PROXY_DEBUG === "1";
+
 /** Internal gateway bind target used by the proxy. */
 export const INTERNAL_GATEWAY_PORT: number = resolvePort(
   process.env.INTERNAL_GATEWAY_PORT,
@@ -293,6 +297,8 @@ export const ALLOWED_CONSOLE_COMMANDS = new Set<string>([
   "gateway.restart",
   "gateway.stop",
   "gateway.start",
+  "gateway.health",
+  "gateway.reset-breaker",
   // OpenClaw CLI helpers.
   "openclaw.version",
   "openclaw.status",

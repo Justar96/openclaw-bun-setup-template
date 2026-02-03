@@ -17,7 +17,7 @@ import type {
   TelegramConfig,
 } from "./types.js";
 
-import { isUnderDir, looksSafeTarPath, redactSecrets } from "./utils.js";
+import { isUnderDir, looksSafeTarPath, parseCommaSeparated, redactSecrets } from "./utils.js";
 
 import {
   ALLOWED_CONSOLE_COMMANDS,
@@ -35,6 +35,7 @@ import {
   OPENCLAW_GATEWAY_TOKEN,
   OPENCLAW_NODE,
   PORT,
+  PROXY_DEBUG,
   SETUP_PASSWORD,
   STATE_DIR,
   UI_DIR,
@@ -44,7 +45,9 @@ import {
 import {
   deleteConfigFile,
   ensureGatewayRunning,
+  getGatewayHealth,
   readConfigFile,
+  resetCircuitBreaker,
   restartGateway,
   runCmd,
   shutdownGateway,
@@ -372,6 +375,7 @@ async function handleApiDebug(req: Request): Promise<Response> {
       ),
       gatewayTokenPersisted: fs.existsSync(path.join(STATE_DIR, "gateway.token")),
       railwayCommit: process.env.RAILWAY_GIT_COMMIT_SHA || null,
+      gatewayHealth: getGatewayHealth(),
     },
     openclaw: {
       entry: OPENCLAW_ENTRY,
@@ -397,7 +401,7 @@ async function handleApiConsoleRun(req: Request): Promise<Response> {
   try {
     if (cmd === "gateway.restart") {
       await restartGateway();
-      return json({ ok: true, output: "Gateway restarted (wrapper-managed).\n" });
+      return json({ ok: true, output: "Gateway restarted (wrapper-managed). Circuit breaker reset.\n" });
     }
     if (cmd === "gateway.stop") {
       await stopGateway();
@@ -409,6 +413,18 @@ async function handleApiConsoleRun(req: Request): Promise<Response> {
         ok: Boolean(r.ok),
         output: r.ok ? "Gateway started.\n" : `Gateway not started: ${r.reason}\n`,
       });
+    }
+    if (cmd === "gateway.health") {
+      const health = getGatewayHealth();
+      return json({
+        ok: true,
+        output: JSON.stringify(health, null, 2),
+        health,
+      });
+    }
+    if (cmd === "gateway.reset-breaker") {
+      resetCircuitBreaker();
+      return json({ ok: true, output: "Circuit breaker reset. You can now try starting the gateway.\n" });
     }
 
     const cmdMap: Record<string, string[]> = {
@@ -493,39 +509,41 @@ async function handleApiPairingList(req: Request): Promise<Response> {
   const channel = url.searchParams.get("channel")?.trim() || "";
   const channels = channel ? [channel] : ["discord", "telegram", "slack", "whatsapp", "signal", "imessage"];
 
-  const results: Record<string, ChannelResult> = {};
+  // Run all channel queries in parallel for faster response
+  const channelResults = await Promise.all(
+    channels.map(async (ch): Promise<[string, ChannelResult]> => {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "list", ch]), { timeoutMs: 10_000 });
+      const output = r.output || "";
+      const pending: PairingEntry[] = [];
 
-  for (const ch of channels) {
-    const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "list", ch]));
-    const output = r.output || "";
-    const pending: PairingEntry[] = [];
-
-    try {
-      const parsed = JSON.parse(output);
-      if (Array.isArray(parsed)) {
-        pending.push(...parsed);
-      }
-    } catch {
-      const lines = output.split("\n");
-      for (const line of lines) {
-        const codeMatch = line.match(/([A-Z0-9]{8})/);
-        const userMatch =
-          line.match(/user[:\s]+(\S+)/i) ||
-          line.match(/from[:\s]+(\S+)/i) ||
-          line.match(/sender[:\s]+(\S+)/i);
-        if (codeMatch) {
-          pending.push({
-            code: codeMatch[1],
-            user: userMatch ? userMatch[1] : "unknown",
-            raw: line.trim(),
-          });
+      try {
+        const parsed = JSON.parse(output);
+        if (Array.isArray(parsed)) {
+          pending.push(...parsed);
+        }
+      } catch {
+        const lines = output.split("\n");
+        for (const line of lines) {
+          const codeMatch = line.match(/([A-Z0-9]{8})/);
+          const userMatch =
+            line.match(/user[:\s]+(\S+)/i) ||
+            line.match(/from[:\s]+(\S+)/i) ||
+            line.match(/sender[:\s]+(\S+)/i);
+          if (codeMatch) {
+            pending.push({
+              code: codeMatch[1],
+              user: userMatch ? userMatch[1] : "unknown",
+              raw: line.trim(),
+            });
+          }
         }
       }
-    }
 
-    results[ch] = { ok: r.code === 0, pending, raw: output };
-  }
+      return [ch, { ok: r.code === 0, pending, raw: output }];
+    })
+  );
 
+  const results: Record<string, ChannelResult> = Object.fromEntries(channelResults);
   return json({ ok: true, channels: results });
 }
 
@@ -671,29 +689,114 @@ async function handleImport(req: Request): Promise<Response> {
 
 // --- Gateway proxy ---
 
+const HOP_BY_HOP_HEADERS = new Set([
+  "connection",
+  "keep-alive",
+  "proxy-authenticate",
+  "proxy-authorization",
+  "te",
+  "trailers",
+  "transfer-encoding",
+  "upgrade",
+]);
+
+const WS_STRIP_HEADERS = new Set([
+  "connection",
+  "upgrade",
+  "sec-websocket-key",
+  "sec-websocket-extensions",
+  "sec-websocket-version",
+  "sec-websocket-accept",
+  "content-length",
+  "host",
+]);
+
+function buildProxyHeaders(
+  req: Request,
+  server: { requestIP: (req: Request) => { address: string } | null }
+): Headers {
+  const url = new URL(req.url);
+  const headers = new Headers(req.headers);
+
+  // Remove hop-by-hop headers; proxies must not forward these.
+  for (const header of HOP_BY_HOP_HEADERS) {
+    headers.delete(header);
+  }
+
+  const existingForwardedFor = headers.get("x-forwarded-for");
+  const remoteIp = server.requestIP(req)?.address;
+
+  if (remoteIp && remoteIp !== "unknown") {
+    if (!existingForwardedFor) {
+      headers.set("x-forwarded-for", remoteIp);
+    } else if (!existingForwardedFor.split(",").map((part) => part.trim()).includes(remoteIp)) {
+      headers.set("x-forwarded-for", `${existingForwardedFor}, ${remoteIp}`);
+    }
+  }
+
+  const realIp = existingForwardedFor?.split(",")[0].trim() || remoteIp;
+  if (realIp && realIp !== "unknown") {
+    headers.set("x-real-ip", realIp);
+  }
+
+  const proto = headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "");
+  if (!headers.has("x-forwarded-proto") && proto) {
+    headers.set("x-forwarded-proto", proto);
+  }
+
+  const host = headers.get("x-forwarded-host") || headers.get("host") || url.host;
+  if (!headers.has("x-forwarded-host") && host) {
+    headers.set("x-forwarded-host", host);
+  }
+
+  if (!headers.has("x-forwarded-port")) {
+    const port = url.port || (proto === "https" ? "443" : "80");
+    headers.set("x-forwarded-port", port);
+  }
+
+  headers.set("x-forwarded-by", "openclaw-wrapper");
+
+  return headers;
+}
+
+function buildWsClientOptions(rawHeaders: Record<string, string>): { headers: Record<string, string>; protocols: string[] } {
+  const protocols = parseCommaSeparated(rawHeaders["sec-websocket-protocol"]);
+  const headers: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(rawHeaders)) {
+    const lower = key.toLowerCase();
+    if (WS_STRIP_HEADERS.has(lower)) continue;
+    if (lower === "sec-websocket-protocol") continue;
+    headers[key] = value;
+  }
+
+  return { headers, protocols };
+}
+
 async function proxyToGateway(req: Request, server: { requestIP: (req: Request) => { address: string } | null }): Promise<Response> {
   const url = new URL(req.url);
   const targetUrl = `${GATEWAY_TARGET}${url.pathname}${url.search}`;
 
-  // Build forwarded headers
-  const headers = new Headers(req.headers);
-  
-  // Get client IP
-  const clientInfo = server.requestIP(req);
-  const existingFwd = headers.get("x-forwarded-for");
-  const clientIp = existingFwd?.split(",")[0].trim() || clientInfo?.address || "unknown";
-  
-  headers.set("X-Real-IP", clientIp);
-  headers.set("X-Forwarded-By", "openclaw-wrapper");
-  headers.set("X-Forwarded-Proto", url.protocol.replace(":", ""));
-  headers.set("X-Forwarded-Host", url.host);
+  const headers = buildProxyHeaders(req, server);
+  const hasBody = req.method !== "GET" && req.method !== "HEAD";
+
+  if (!hasBody) {
+    headers.delete("content-length");
+  }
+
+  const start = Date.now();
 
   try {
     const proxyRes = await fetch(targetUrl, {
       method: req.method,
       headers,
-      body: req.body,
+      body: hasBody ? req.body : undefined,
     });
+
+    if (PROXY_DEBUG) {
+      const durationMs = Date.now() - start;
+      console.log(`[proxy] ${req.method} ${url.pathname}${url.search} -> ${proxyRes.status} ${durationMs}ms`);
+    }
 
     // Clone response with all headers
     const responseHeaders = new Headers(proxyRes.headers);
@@ -704,6 +807,10 @@ async function proxyToGateway(req: Request, server: { requestIP: (req: Request) 
       headers: responseHeaders,
     });
   } catch (err) {
+    if (PROXY_DEBUG) {
+      const durationMs = Date.now() - start;
+      console.log(`[proxy] ${req.method} ${url.pathname}${url.search} -> error ${durationMs}ms`);
+    }
     console.error("[proxy]", err);
     return text(`Gateway error: ${String(err)}`, 502);
   }
@@ -774,9 +881,10 @@ const server = Bun.serve<WsData>({
       }
 
       // Upgrade to WebSocket
+      const proxyHeaders = buildProxyHeaders(req, server);
       const wsData: WsData = {
         url: `ws://${INTERNAL_GATEWAY_HOST}:${INTERNAL_GATEWAY_PORT}${pathname}${url.search}`,
-        headers: Object.fromEntries(req.headers),
+        headers: Object.fromEntries(proxyHeaders),
       };
       const success = server.upgrade(req, { data: wsData });
 
@@ -816,7 +924,11 @@ const server = Bun.serve<WsData>({
       
       try {
         // Connect to gateway WebSocket
-        const gatewayWs = new WebSocket(data.url);
+        const { headers, protocols } = buildWsClientOptions(data.headers);
+        const gatewayWs = new WebSocket(
+          data.url,
+          protocols.length ? { headers, protocols } : { headers }
+        );
         
         gatewayWs.binaryType = "arraybuffer";
         

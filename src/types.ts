@@ -20,6 +20,12 @@ export interface WaitForGatewayOptions {
 export interface GatewayState {
   proc: ChildProcess | null;
   starting: Promise<void> | null;
+  crashHistory: number[];        // Timestamps of recent crashes
+  consecutiveFails: number;      // Count of consecutive startup failures
+  circuitOpen: boolean;          // Circuit breaker state
+  circuitOpenedAt: number | null; // When circuit was opened
+  lastHealthCheck: number | null; // Last successful health check timestamp
+  healthCheckTimer: ReturnType<typeof setInterval> | null;
 }
 
 // Auth provider configuration used by the setup UI.

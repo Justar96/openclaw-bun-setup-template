@@ -15,9 +15,25 @@ import {
   OPENCLAW_NODE,
 } from "./config.js";
 
+// Circuit breaker / crash tracking configuration
+const CRASH_WINDOW_MS = 60_000;           // Track crashes within 1 minute
+const MAX_CRASHES_IN_WINDOW = 5;          // Max crashes before circuit opens
+const CIRCUIT_RESET_MS = 120_000;         // Wait 2 minutes before retrying after circuit opens
+const MAX_CONSECUTIVE_FAILS = 3;          // Max consecutive startup failures
+const BASE_BACKOFF_MS = 1_000;            // Base backoff delay
+const MAX_BACKOFF_MS = 30_000;            // Max backoff delay
+const HEALTH_CHECK_INTERVAL_MS = 30_000;  // Health check every 30 seconds
+const HEALTH_CHECK_TIMEOUT_MS = 5_000;    // Timeout for health check requests
+
 const state: GatewayState = {
   proc: null,
   starting: null,
+  crashHistory: [],
+  consecutiveFails: 0,
+  circuitOpen: false,
+  circuitOpenedAt: null,
+  lastHealthCheck: null,
+  healthCheckTimer: null,
 };
 
 function mergeEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -37,26 +53,151 @@ export function clearGatewayProc(): void {
   state.proc = null;
 }
 
+/** Calculate exponential backoff delay with jitter. */
+function calculateBackoff(attempt: number): number {
+  const exponential = Math.min(BASE_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS);
+  const jitter = Math.random() * 0.3 * exponential; // Add up to 30% jitter
+  return Math.floor(exponential + jitter);
+}
+
+/** Record a crash and check if circuit should open. */
+function recordCrash(): void {
+  const now = Date.now();
+  state.crashHistory.push(now);
+  
+  // Prune old crashes outside the window
+  state.crashHistory = state.crashHistory.filter(t => now - t < CRASH_WINDOW_MS);
+  
+  console.error(`[gateway] crash recorded (${state.crashHistory.length} in last ${CRASH_WINDOW_MS / 1000}s)`);
+  
+  // Open circuit if too many crashes
+  if (state.crashHistory.length >= MAX_CRASHES_IN_WINDOW) {
+    state.circuitOpen = true;
+    state.circuitOpenedAt = now;
+    console.error(`[gateway] CIRCUIT BREAKER OPEN: ${state.crashHistory.length} crashes in ${CRASH_WINDOW_MS / 1000}s. Will retry after ${CIRCUIT_RESET_MS / 1000}s`);
+  }
+}
+
+/** Check if circuit breaker allows starting. */
+function checkCircuitBreaker(): { allowed: boolean; reason?: string } {
+  if (!state.circuitOpen) {
+    return { allowed: true };
+  }
+  
+  const now = Date.now();
+  const elapsed = now - (state.circuitOpenedAt ?? 0);
+  
+  if (elapsed >= CIRCUIT_RESET_MS) {
+    // Reset circuit breaker (half-open state)
+    console.log(`[gateway] circuit breaker reset after ${elapsed / 1000}s cooldown`);
+    state.circuitOpen = false;
+    state.circuitOpenedAt = null;
+    state.crashHistory = [];
+    state.consecutiveFails = 0;
+    return { allowed: true };
+  }
+  
+  const remaining = Math.ceil((CIRCUIT_RESET_MS - elapsed) / 1000);
+  return {
+    allowed: false,
+    reason: `Circuit breaker open due to repeated failures. Retry in ${remaining}s`,
+  };
+}
+
+/** Start health check monitoring. */
+function startHealthMonitor(): void {
+  stopHealthMonitor();
+  
+  state.healthCheckTimer = setInterval(async () => {
+    if (!state.proc) return;
+    
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+      
+      const res = await fetch(`${GATEWAY_TARGET}/`, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timer);
+      
+      if (res.ok || res.status < 500) {
+        state.lastHealthCheck = Date.now();
+        state.consecutiveFails = 0; // Reset on healthy response
+      }
+    } catch {
+      console.warn(`[gateway] health check failed`);
+    }
+  }, HEALTH_CHECK_INTERVAL_MS);
+}
+
+/** Stop health check monitoring. */
+function stopHealthMonitor(): void {
+  if (state.healthCheckTimer) {
+    clearInterval(state.healthCheckTimer);
+    state.healthCheckTimer = null;
+  }
+}
+
+/** Get current gateway health status. */
+export function getGatewayHealth(): {
+  running: boolean;
+  circuitOpen: boolean;
+  crashCount: number;
+  consecutiveFails: number;
+  lastHealthCheck: number | null;
+} {
+  return {
+    running: state.proc !== null,
+    circuitOpen: state.circuitOpen,
+    crashCount: state.crashHistory.length,
+    consecutiveFails: state.consecutiveFails,
+    lastHealthCheck: state.lastHealthCheck,
+  };
+}
+
+export interface RunCmdOptions extends SpawnOptions {
+  timeoutMs?: number;
+}
+
 /** Run a command and capture stdout/stderr into a single buffer. */
-export function runCmd(cmd: string, args: string[], opts: SpawnOptions = {}): Promise<CommandResult> {
+export function runCmd(cmd: string, args: string[], opts: RunCmdOptions = {}): Promise<CommandResult> {
   return new Promise((resolve) => {
-    const { env: extraEnv, ...spawnOpts } = opts;
+    const { env: extraEnv, timeoutMs, ...spawnOpts } = opts;
     const proc = childProcess.spawn(cmd, args, {
       ...spawnOpts,
       env: mergeEnv(extraEnv),
     });
 
     let out = "";
+    let killed = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    if (timeoutMs && timeoutMs > 0) {
+      timer = setTimeout(() => {
+        killed = true;
+        out += `\n[timeout] Command killed after ${timeoutMs}ms\n`;
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          // ignore
+        }
+      }, timeoutMs);
+    }
+
     proc.stdout?.on("data", (d: Buffer) => (out += d.toString("utf8")));
     proc.stderr?.on("data", (d: Buffer) => (out += d.toString("utf8")));
 
     proc.on("error", (err: Error) => {
+      if (timer) clearTimeout(timer);
       out += `\n[spawn error] ${String(err)}\n`;
       resolve({ code: 127, output: out });
     });
 
     proc.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
-      const exitCode = code ?? (signal ? 1 : 0);
+      if (timer) clearTimeout(timer);
+      const exitCode = killed ? 124 : (code ?? (signal ? 1 : 0));
       resolve({ code: exitCode, output: out });
     });
   });
@@ -95,6 +236,19 @@ async function startGateway(): Promise<void> {
   if (state.proc) return;
   if (!isConfigured()) throw new Error("Gateway cannot start: not configured");
 
+  // Check circuit breaker before starting
+  const circuit = checkCircuitBreaker();
+  if (!circuit.allowed) {
+    throw new Error(circuit.reason);
+  }
+
+  // Apply backoff if we have consecutive failures
+  if (state.consecutiveFails > 0) {
+    const backoff = calculateBackoff(state.consecutiveFails);
+    console.log(`[gateway] applying ${backoff}ms backoff (attempt ${state.consecutiveFails + 1})`);
+    await sleep(backoff);
+  }
+
   ensureDirectories();
 
   const args = [
@@ -110,6 +264,8 @@ async function startGateway(): Promise<void> {
     OPENCLAW_GATEWAY_TOKEN,
   ];
 
+  const startTime = Date.now();
+
   state.proc = childProcess.spawn(OPENCLAW_NODE, clawArgs(args), {
     stdio: "inherit",
     env: getChildEnv(),
@@ -117,13 +273,35 @@ async function startGateway(): Promise<void> {
 
   state.proc.on("error", (err: Error) => {
     console.error(`[gateway] spawn error: ${String(err)}`);
+    stopHealthMonitor();
+    state.consecutiveFails++;
+    recordCrash();
     state.proc = null;
   });
 
   state.proc.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
-    console.error(`[gateway] exited code=${code} signal=${signal}`);
+    const runtime = Date.now() - startTime;
+    console.error(`[gateway] exited code=${code} signal=${signal} after ${runtime}ms`);
+    stopHealthMonitor();
+    
+    // Only count as crash if it exited quickly with an error
+    // (not a clean shutdown from SIGTERM)
+    if (signal !== "SIGTERM" && signal !== "SIGINT") {
+      if (code !== 0 || runtime < 10_000) {
+        // Crashed or exited too quickly (likely startup failure)
+        state.consecutiveFails++;
+        recordCrash();
+      } else {
+        // Ran for a while before exiting - reset failure counter
+        state.consecutiveFails = 0;
+      }
+    }
+    
     state.proc = null;
   });
+
+  // Start health monitoring after spawn
+  startHealthMonitor();
 }
 
 /** Ensure the gateway is running, starting it when needed. */
@@ -131,25 +309,56 @@ export async function ensureGatewayRunning(): Promise<GatewayResult> {
   if (!isConfigured()) return { ok: false, reason: "not configured" };
   if (state.proc) return { ok: true };
   
+  // Check circuit breaker first
+  const circuit = checkCircuitBreaker();
+  if (!circuit.allowed) {
+    return { ok: false, reason: circuit.reason };
+  }
+  
+  // Check consecutive failures
+  if (state.consecutiveFails >= MAX_CONSECUTIVE_FAILS) {
+    const msg = `Too many consecutive startup failures (${state.consecutiveFails}). Use gateway.restart to force retry.`;
+    console.error(`[gateway] ${msg}`);
+    return { ok: false, reason: msg };
+  }
+  
   if (!state.starting) {
     state.starting = (async () => {
       await startGateway();
       const ready = await waitForGatewayReady({ timeoutMs: 20_000 });
       if (!ready) {
+        state.consecutiveFails++;
+        recordCrash();
         throw new Error("Gateway did not become ready in time");
       }
+      // Success - reset failure counter
+      state.consecutiveFails = 0;
+      state.lastHealthCheck = Date.now();
+      console.log(`[gateway] started successfully`);
     })().finally(() => {
       state.starting = null;
     });
   }
   
-  await state.starting;
-  return { ok: true };
+  try {
+    await state.starting;
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: String(err) };
+  }
 }
 
 /** Stop the gateway if running, then restart it. */
 export async function restartGateway(): Promise<GatewayResult> {
+  // Reset circuit breaker and failure counters on explicit restart
+  state.circuitOpen = false;
+  state.circuitOpenedAt = null;
+  state.consecutiveFails = 0;
+  state.crashHistory = [];
+  console.log(`[gateway] restart requested - resetting circuit breaker`);
+  
   if (state.proc) {
+    stopHealthMonitor();
     try {
       state.proc.kill("SIGTERM");
     } catch {
@@ -164,6 +373,7 @@ export async function restartGateway(): Promise<GatewayResult> {
 
 /** Stop the gateway if running. */
 export async function stopGateway(): Promise<void> {
+  stopHealthMonitor();
   if (state.proc) {
     try {
       state.proc.kill("SIGTERM");
@@ -177,6 +387,7 @@ export async function stopGateway(): Promise<void> {
 
 /** Best-effort shutdown used during wrapper process exit. */
 export function shutdownGateway(): void {
+  stopHealthMonitor();
   try {
     if (state.proc) {
       state.proc.kill("SIGTERM");
@@ -184,6 +395,15 @@ export function shutdownGateway(): void {
   } catch {
     // Ignore shutdown errors on exit.
   }
+}
+
+/** Reset circuit breaker and failure counters (for manual recovery). */
+export function resetCircuitBreaker(): void {
+  state.circuitOpen = false;
+  state.circuitOpenedAt = null;
+  state.consecutiveFails = 0;
+  state.crashHistory = [];
+  console.log(`[gateway] circuit breaker manually reset`);
 }
 
 /** Read the raw config file content. */
