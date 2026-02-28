@@ -808,12 +808,15 @@ async function proxyToGateway(req: Request, server: { requestIP: (req: Request) 
     headers.set("origin", GATEWAY_TARGET);
   }
 
-  // Strip proxy headers so the loopback gateway treats connections as
-  // local. Without this, the gateway sees X-Forwarded-For from upstream
+  // Strip ALL proxy headers so the loopback gateway treats connections as
+  // local. Without this, the gateway sees forwarded headers from upstream
   // Railway proxies, considers them untrusted, and requires pairing.
   headers.delete("x-forwarded-for");
   headers.delete("x-forwarded-proto");
   headers.delete("x-forwarded-host");
+  headers.delete("x-forwarded-port");
+  headers.delete("x-forwarded-by");
+  headers.delete("x-real-ip");
 
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
 
@@ -984,10 +987,13 @@ const server = Bun.serve<WsData>({
           headers["origin"] = GATEWAY_TARGET;
         }
 
-        // Strip proxy headers so gateway treats the connection as local.
+        // Strip ALL proxy headers so gateway treats the connection as local.
         delete headers["x-forwarded-for"];
         delete headers["x-forwarded-proto"];
         delete headers["x-forwarded-host"];
+        delete headers["x-forwarded-port"];
+        delete headers["x-forwarded-by"];
+        delete headers["x-real-ip"];
 
         const gatewayWs = new WebSocket(
           data.url,
