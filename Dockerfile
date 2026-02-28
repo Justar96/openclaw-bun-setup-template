@@ -51,6 +51,5 @@ ENV OPENCLAW_NODE=bun
 ENV OPENCLAW_STATE_DIR=/data/.openclaw
 ENV OPENCLAW_WORKSPACE_DIR=/data/workspace
 
-VOLUME /data
 EXPOSE 8080
 CMD ["bun", "run", "dist/server.js"]
