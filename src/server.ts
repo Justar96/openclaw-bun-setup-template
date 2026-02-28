@@ -457,9 +457,45 @@ async function handleApiConsoleRun(req: Request): Promise<Response> {
       return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
+    if (cmd === "openclaw.config.set") {
+      if (!arg) return json({ ok: false, error: "Missing config key=value (e.g. gateway.auth.mode token)" }, 400);
+      const parts = arg.split(/\s+/);
+      if (parts.length < 2) return json({ ok: false, error: "Usage: key value" }, 400);
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", ...parts]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
     if (cmd === "openclaw.pairing.list") {
       const channel = arg || "discord";
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "list", channel]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.pairing.approve") {
+      if (!arg) return json({ ok: false, error: "Missing pairing code or channel + code" }, 400);
+      const parts = arg.split(/\s+/);
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["pairing", "approve", ...parts]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.nodes.list") {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["nodes", "list"]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.nodes.approve") {
+      if (!arg) return json({ ok: false, error: "Missing node request ID" }, 400);
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["nodes", "approve", arg]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.channels.status") {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "status"]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.security.audit") {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["security", "audit"]));
       return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 

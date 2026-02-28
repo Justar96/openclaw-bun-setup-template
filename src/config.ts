@@ -65,7 +65,7 @@ export const GATEWAY_TARGET: string = `http://${INTERNAL_GATEWAY_HOST}:${INTERNA
 
 /** Resolve the OpenClaw CLI entry path, preferring a local build and falling back to legacy paths. */
 export const OPENCLAW_ENTRY: string = resolveEntryPath();
-export const OPENCLAW_NODE: string = process.env.OPENCLAW_NODE?.trim() || "bun";
+export const OPENCLAW_NODE: string = process.env.OPENCLAW_NODE?.trim() || "node";
 
 /** UI assets live alongside the wrapper source. */
 export const UI_DIR: string = path.join(process.cwd(), "src", "ui");
@@ -315,5 +315,11 @@ export const ALLOWED_CONSOLE_COMMANDS = new Set<string>([
   "openclaw.doctor",
   "openclaw.logs.tail",
   "openclaw.config.get",
+  "openclaw.config.set",
   "openclaw.pairing.list",
+  "openclaw.pairing.approve",
+  "openclaw.nodes.list",
+  "openclaw.nodes.approve",
+  "openclaw.channels.status",
+  "openclaw.security.audit",
 ]);
