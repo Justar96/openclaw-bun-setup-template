@@ -672,6 +672,17 @@ async function handleImport(req: Request): Promise<Response> {
       },
     });
 
+    // Validate the config file after extraction — remove it if empty/corrupt
+    // to prevent gateway crash loops.
+    const cfgPath = configPath();
+    if (fs.existsSync(cfgPath)) {
+      const content = fs.readFileSync(cfgPath, "utf-8").trim();
+      if (!content || content.length < 3) {
+        console.warn("[import] config file is empty after extraction, removing");
+        fs.rmSync(cfgPath, { force: true });
+      }
+    }
+
     if (isConfigured()) {
       await restartGateway();
     }

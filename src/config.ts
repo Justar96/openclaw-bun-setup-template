@@ -113,10 +113,13 @@ export function configPath(): string {
   );
 }
 
-/** Return true when the config file exists on disk. */
+/** Return true when the config file exists and has valid content. */
 export function isConfigured(): boolean {
   try {
-    return fs.existsSync(configPath());
+    const p = configPath();
+    if (!fs.existsSync(p)) return false;
+    const stat = fs.statSync(p);
+    return stat.size > 2; // empty or "{}" is not configured
   } catch {
     return false;
   }
