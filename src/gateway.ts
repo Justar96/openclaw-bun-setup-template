@@ -13,6 +13,7 @@ import {
   isConfigured,
   OPENCLAW_GATEWAY_TOKEN,
   OPENCLAW_NODE,
+  STATE_DIR,
   WORKSPACE_DIR,
 } from "./config.js";
 
@@ -440,6 +441,40 @@ export async function syncGatewayTokens(): Promise<void> {
   await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
   await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
   await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+}
+
+/** Configure gateway settings for Railway proxy deployment and clear stale pairing state.
+ *
+ *  Behind a reverse proxy the device pairing system is redundant — our proxy
+ *  authenticates via SETUP_PASSWORD before forwarding to the gateway.  We:
+ *  1. Disable device auth for Control UI so browser connections skip pairing entirely.
+ *  2. Delete stale pending pairing files that may contain poisoned silent=false entries
+ *     from earlier runs (the merge logic ANDs the silent flag, so one bad entry blocks
+ *     all future auto-approvals). */
+export async function syncGatewayConfig(): Promise<void> {
+  if (!isConfigured()) return;
+  console.log("[gateway] syncing gateway config for proxy deployment");
+
+  // Skip device identity checks for Control UI (our proxy handles auth).
+  await runCmd(OPENCLAW_NODE, clawArgs([
+    "config", "set", "gateway.controlUi.dangerouslyDisableDeviceAuth", "true",
+  ]));
+
+  // Clear stale pending device/node pairings before gateway start.
+  // These files may contain requests with silent=false from when the gateway
+  // ran under Bun (remoteAddress was undefined → isLocalClient=false).
+  const stalePaths = [
+    path.join(STATE_DIR, "devices", "pending.json"),
+    path.join(STATE_DIR, "nodes", "pending.json"),
+  ];
+  for (const p of stalePaths) {
+    try {
+      fs.unlinkSync(p);
+      console.log(`[gateway] removed stale pairing file: ${p}`);
+    } catch {
+      // File doesn't exist yet — expected on first run.
+    }
+  }
 }
 
 /** Run $WORKSPACE_DIR/bootstrap.sh if it exists (10 minute timeout). */

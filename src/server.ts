@@ -53,6 +53,7 @@ import {
   runCmd,
   shutdownGateway,
   stopGateway,
+  syncGatewayConfig,
   syncGatewayTokens,
   writeConfigFile,
 } from "./gateway.js";
@@ -496,6 +497,22 @@ async function handleApiConsoleRun(req: Request): Promise<Response> {
 
     if (cmd === "openclaw.security.audit") {
       const r = await runCmd(OPENCLAW_NODE, clawArgs(["security", "audit"]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.devices.list") {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "list", "--json"]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.devices.clear") {
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(["devices", "clear", "--yes", "--pending"]));
+      return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
+    }
+
+    if (cmd === "openclaw.devices.approve") {
+      const args = arg ? ["devices", "approve", arg] : ["devices", "approve", "--latest"];
+      const r = await runCmd(OPENCLAW_NODE, clawArgs(args));
       return json({ ok: r.code === 0, output: redactSecrets(r.output) }, r.code === 0 ? 200 : 500);
     }
 
@@ -1122,11 +1139,12 @@ if (DEV_MODE) {
   console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
 }
 
-// Startup lifecycle: ensure directories, sync tokens, run bootstrap, auto-start gateway.
+// Startup lifecycle: ensure directories, sync tokens/config, run bootstrap, auto-start gateway.
 (async () => {
   try {
     ensureDirectories();
     await syncGatewayTokens();
+    await syncGatewayConfig();
     await runBootstrapHook();
     if (isConfigured()) {
       console.log("[wrapper] auto-starting gateway (already configured)");

@@ -322,4 +322,8 @@ export const ALLOWED_CONSOLE_COMMANDS = new Set<string>([
   "openclaw.nodes.approve",
   "openclaw.channels.status",
   "openclaw.security.audit",
+  // Device pairing management.
+  "openclaw.devices.list",
+  "openclaw.devices.clear",
+  "openclaw.devices.approve",
 ]);
