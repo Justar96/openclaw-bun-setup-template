@@ -1,5 +1,7 @@
 # OpenClaw Railway Template
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/from?repoUrl=https%3A%2F%2Fgithub.com%2FJustar96%2Fopenclaw-bun-setup-template)
+
 I forked this from [vignesh07/clawdbot-railway-template](https://github.com/vignesh07/clawdbot-railway-template) because I wanted a simpler, faster setup. This is a Bun-based Railway template that gets you running OpenClaw with zero command-line work.
 
 ## What's in the box
