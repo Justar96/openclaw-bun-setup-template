@@ -802,6 +802,12 @@ async function proxyToGateway(req: Request, server: { requestIP: (req: Request) 
     headers.set("authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
   }
 
+  // Rewrite Origin to match the gateway host so the Control UI
+  // origin check passes (browser sends the Railway public domain).
+  if (headers.has("origin")) {
+    headers.set("origin", GATEWAY_TARGET);
+  }
+
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
 
   if (!hasBody) {
@@ -964,6 +970,11 @@ const server = Bun.serve<WsData>({
         // Inject gateway token for WebSocket connections without auth.
         if (!headers["authorization"]) {
           headers["authorization"] = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+        }
+
+        // Rewrite Origin to match the gateway host for Control UI origin check.
+        if (headers["origin"]) {
+          headers["origin"] = GATEWAY_TARGET;
         }
 
         const gatewayWs = new WebSocket(
