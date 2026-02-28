@@ -21,22 +21,21 @@ The service runs a small web server that:
 
 ## Deploying to Railway
 
-1. Create a new template from this repo (Dockerfile build)
-2. Add a **Volume** mounted at `/data`
-3. Enable **HTTP Proxy** on port `8080` in Public Networking
-4. Set these variables:
+1. Click the **Deploy on Railway** button above
+2. Set these variables when prompted:
    - `SETUP_PASSWORD` — required to access the setup page
-   - `PORT=8080` — required and must match the HTTP Proxy port
-   - `OPENCLAW_STATE_DIR=/data/.openclaw` (recommended)
-   - `OPENCLAW_WORKSPACE_DIR=/data/workspace` (recommended)
-   - `OPENCLAW_GATEWAY_TOKEN` (recommended; treat as an admin secret)
-5. (Optional) Pin the OpenClaw source ref: `OPENCLAW_GIT_REF=main` (or a tag/commit)
-6. Deploy
+   - `OPENCLAW_GATEWAY_TOKEN` — any random string (treat as admin secret)
+3. After deploy, go to your service in the Railway dashboard and:
+   - **Add a Volume** mounted at **`/data`** (Settings → Volumes → Add Volume → mount path `/data`)
+   - **Generate a domain** (Settings → Networking → Generate Domain)
+4. Railway will redeploy automatically after adding the volume
+5. Open `https://<your-domain>.up.railway.app/setup`, finish the wizard, and you're live
 
-Then just hit `https://<your-app>.up.railway.app/setup`, finish the wizard, and you're live. The Control UI is at `/openclaw`.
+> **Important:** The volume at `/data` is required. Without it, all config, workspace data, and updates are lost on every redeploy.
 
-Note: This repo includes a Dockerfile used by Railway and CI for container builds.
-Note: Railway domains are created from the UI (Settings → Networking → Generate Domain); they are not auto-provisioned by templates or `railway.json`.
+The Control UI is at `/openclaw` after setup.
+
+Note: Railway domains and volumes must be added from the dashboard — they cannot be auto-provisioned from `railway.json`.
 
 ## Getting your bot tokens
 
