@@ -39,9 +39,18 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/openclaw ./openclaw
 COPY --from=build /app/src/ui ./src/ui
 
+# Prepare persistent data directory for Railway volume mount.
+# Railway overlays a volume here at runtime; pre-creating ensures
+# correct ownership if the container starts before the mount is ready.
+RUN mkdir -p /data/.openclaw /data/workspace \
+  && chown -R bun:bun /data
+
 ENV PORT=8080
 ENV OPENCLAW_PUBLIC_PORT=8080
 ENV OPENCLAW_NODE=bun
+ENV OPENCLAW_STATE_DIR=/data/.openclaw
+ENV OPENCLAW_WORKSPACE_DIR=/data/workspace
 
+VOLUME /data
 EXPOSE 8080
 CMD ["bun", "run", "dist/server.js"]
