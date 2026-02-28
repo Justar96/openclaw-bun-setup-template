@@ -13,6 +13,7 @@ import {
   isConfigured,
   OPENCLAW_GATEWAY_TOKEN,
   OPENCLAW_NODE,
+  WORKSPACE_DIR,
 } from "./config.js";
 
 // Circuit breaker / crash tracking configuration
@@ -429,4 +430,26 @@ export function writeConfigFile(configFilePath: string, content: string): void {
 /** Delete the config file during reset. */
 export function deleteConfigFile(configFilePath: string): void {
   fs.rmSync(configFilePath, { force: true });
+}
+
+/** Re-sync gateway tokens in the config file with the current env var.
+ *  Prevents token mismatch errors after Railway variable updates. */
+export async function syncGatewayTokens(): Promise<void> {
+  if (!isConfigured()) return;
+  console.log("[gateway] syncing gateway tokens with current env");
+  await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
+  await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+  await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.remote.token", OPENCLAW_GATEWAY_TOKEN]));
+}
+
+/** Run $WORKSPACE_DIR/bootstrap.sh if it exists (10 minute timeout). */
+export async function runBootstrapHook(): Promise<void> {
+  const script = path.join(WORKSPACE_DIR, "bootstrap.sh");
+  if (!fs.existsSync(script)) return;
+  console.log("[wrapper] running bootstrap.sh...");
+  const result = await runCmd("bash", [script], { timeoutMs: 600_000 });
+  console.log(`[wrapper] bootstrap.sh exited code=${result.code}`);
+  if (result.output) {
+    console.log(`[wrapper] bootstrap.sh output:\n${result.output}`);
+  }
 }

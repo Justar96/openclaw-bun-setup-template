@@ -49,9 +49,11 @@ import {
   readConfigFile,
   resetCircuitBreaker,
   restartGateway,
+  runBootstrapHook,
   runCmd,
   shutdownGateway,
   stopGateway,
+  syncGatewayTokens,
   writeConfigFile,
 } from "./gateway.js";
 
@@ -322,10 +324,10 @@ async function handleApiRun(req: Request): Promise<Response> {
     const ok = onboard.code === 0 && isConfigured();
 
     if (ok) {
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.mode", "token"]));
-      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.auth.token", OPENCLAW_GATEWAY_TOKEN]));
+      await syncGatewayTokens();
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.bind", "loopback"]));
       await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "gateway.port", String(INTERNAL_GATEWAY_PORT)]));
+      await runCmd(OPENCLAW_NODE, clawArgs(["config", "set", "--json", "gateway.trustedProxies", '["127.0.0.1"]']));
 
       const channelsHelp = await runCmd(OPENCLAW_NODE, clawArgs(["channels", "add", "--help"]));
       const helpText = channelsHelp.output || "";
@@ -342,6 +344,10 @@ async function handleApiRun(req: Request): Promise<Response> {
       if (payload.slackBotToken?.trim() || payload.slackAppToken?.trim()) {
         extra += await configureSlack(payload, supports);
       }
+
+      // Activate plugins and fix any config issues.
+      const doctor = await runCmd(OPENCLAW_NODE, clawArgs(["doctor", "--fix"]));
+      extra += `\n[doctor --fix] exit=${doctor.code}\n${doctor.output || "(no output)"}`;
 
       await restartGateway();
     }
@@ -778,6 +784,13 @@ async function proxyToGateway(req: Request, server: { requestIP: (req: Request) 
   const targetUrl = `${GATEWAY_TARGET}${url.pathname}${url.search}`;
 
   const headers = buildProxyHeaders(req, server);
+
+  // Inject gateway token for requests without an auth header so the
+  // browser Control UI can connect without pasting the token.
+  if (!headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${OPENCLAW_GATEWAY_TOKEN}`);
+  }
+
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
 
   if (!hasBody) {
@@ -874,6 +887,10 @@ const server = Bun.serve<WsData>({
         return new Response("Not configured", { status: 503 });
       }
 
+      // Require auth for WebSocket connections (protects Control UI).
+      const wsAuthErr = checkSetupAuth(req);
+      if (wsAuthErr) return wsAuthErr;
+
       try {
         await ensureGatewayRunning();
       } catch (err) {
@@ -906,6 +923,13 @@ const server = Bun.serve<WsData>({
       return redirect("/setup");
     }
 
+    // Require auth for all proxied requests (protects Control UI).
+    // Exempt /healthz which is a public health probe.
+    if (pathname !== "/healthz") {
+      const dashAuthErr = checkSetupAuth(req);
+      if (dashAuthErr) return dashAuthErr;
+    }
+
     // Proxy to gateway
     if (isConfigured()) {
       try {
@@ -925,6 +949,12 @@ const server = Bun.serve<WsData>({
       try {
         // Connect to gateway WebSocket
         const { headers, protocols } = buildWsClientOptions(data.headers);
+
+        // Inject gateway token for WebSocket connections without auth.
+        if (!headers["authorization"]) {
+          headers["authorization"] = `Bearer ${OPENCLAW_GATEWAY_TOKEN}`;
+        }
+
         const gatewayWs = new WebSocket(
           data.url,
           protocols.length ? { headers, protocols } : { headers }
@@ -1001,7 +1031,7 @@ const server = Bun.serve<WsData>({
   },
 });
 
-// --- Startup logging ---
+// --- Startup lifecycle ---
 
 console.log(`[wrapper] running on Bun ${Bun.version}`);
 console.log(`[wrapper] listening on :${PORT}`);
@@ -1015,6 +1045,21 @@ if (DEV_MODE) {
 } else if (!SETUP_PASSWORD) {
   console.warn("[wrapper] WARNING: SETUP_PASSWORD is not set; /setup will error.");
 }
+
+// Startup lifecycle: ensure directories, sync tokens, run bootstrap, auto-start gateway.
+(async () => {
+  try {
+    ensureDirectories();
+    await syncGatewayTokens();
+    await runBootstrapHook();
+    if (isConfigured()) {
+      console.log("[wrapper] auto-starting gateway (already configured)");
+      await ensureGatewayRunning();
+    }
+  } catch (err) {
+    console.error("[wrapper] startup lifecycle error:", err);
+  }
+})();
 
 // --- Shutdown hooks ---
 

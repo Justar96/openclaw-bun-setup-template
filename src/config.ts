@@ -122,10 +122,16 @@ export function isConfigured(): boolean {
   }
 }
 
-/** Ensure state and workspace directories exist on disk. */
+/** Ensure state and workspace directories exist on disk with secure permissions. */
 export function ensureDirectories(): void {
   fs.mkdirSync(STATE_DIR, { recursive: true });
   fs.mkdirSync(WORKSPACE_DIR, { recursive: true });
+  fs.mkdirSync(path.join(STATE_DIR, "credentials"), { recursive: true });
+  try {
+    fs.chmodSync(STATE_DIR, 0o700);
+  } catch {
+    // Best-effort: volume filesystems may not support chmod.
+  }
 }
 
 /** Build environment variables for child processes. */
