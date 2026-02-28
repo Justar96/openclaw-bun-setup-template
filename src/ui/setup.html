@@ -335,32 +335,16 @@
 
       <!-- Console Tab -->
       <div id="tab-console" class="tab-content" role="tabpanel" aria-labelledby="tab-btn-console">
-        <p class="card-muted">Run diagnostic commands. Useful for debugging and recovery.</p>
-
-        <div class="console-form">
-          <div class="form-field">
-            <label for="consoleCmd">Command</label>
-            <select id="consoleCmd" aria-describedby="cmd-hint">
-              <option value="gateway.restart">gateway.restart</option>
-              <option value="gateway.stop">gateway.stop</option>
-              <option value="gateway.start">gateway.start</option>
-              <option value="openclaw.status">openclaw status</option>
-              <option value="openclaw.health">openclaw health</option>
-              <option value="openclaw.doctor">openclaw doctor</option>
-              <option value="openclaw.logs.tail">openclaw logs --tail N</option>
-              <option value="openclaw.config.get">openclaw config get &lt;path&gt;</option>
-              <option value="openclaw.pairing.list">openclaw pairing list &lt;channel&gt;</option>
-              <option value="openclaw.version">openclaw --version</option>
-            </select>
+        <div class="terminal" id="terminalContainer">
+          <div class="terminal-output" id="consoleOut" aria-live="polite"></div>
+          <div class="terminal-input-line">
+            <span class="terminal-prompt">$</span>
+            <input id="consoleInput" type="text" class="terminal-input"
+                   placeholder="Type a command... (Tab to autocomplete, ? for help)"
+                   autocomplete="off" spellcheck="false" />
           </div>
-          <div class="form-field">
-            <label for="consoleArg">Argument (optional)</label>
-            <input id="consoleArg" placeholder="e.g. 200, discord" aria-describedby="arg-hint" />
-            <span id="arg-hint" class="field-hint">Required for commands with N or &lt;path&gt;</span>
-          </div>
-          <button id="consoleRun" class="btn btn-primary align-end" aria-label="Run selected command">Run</button>
+          <div id="consoleSuggestions" class="terminal-suggestions" hidden></div>
         </div>
-        <pre id="consoleOut" class="output-log console-output" aria-live="polite"></pre>
       </div>
 
       <!-- Backup Tab -->

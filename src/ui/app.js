@@ -919,53 +919,251 @@
     }
   };
 
-  // Console command runner.
+  // Console terminal emulator.
+  const CONSOLE_COMMANDS = [
+    'gateway.restart', 'gateway.stop', 'gateway.start', 'gateway.health', 'gateway.reset-breaker',
+    'openclaw.version', 'openclaw.status', 'openclaw.health', 'openclaw.doctor',
+    'openclaw.logs.tail', 'openclaw.config.get', 'openclaw.config.set',
+    'openclaw.pairing.list', 'openclaw.pairing.approve',
+    'openclaw.nodes.list', 'openclaw.nodes.approve',
+    'openclaw.channels.status', 'openclaw.security.audit',
+    'openclaw.devices.list', 'openclaw.devices.clear', 'openclaw.devices.approve',
+  ];
+
+  const CONSOLE_HELP = {
+    'Gateway': ['gateway.restart', 'gateway.stop', 'gateway.start', 'gateway.health', 'gateway.reset-breaker'],
+    'Status': ['openclaw.version', 'openclaw.status', 'openclaw.health', 'openclaw.doctor'],
+    'Logs & Config': ['openclaw.logs.tail', 'openclaw.config.get', 'openclaw.config.set'],
+    'Pairing': ['openclaw.pairing.list', 'openclaw.pairing.approve'],
+    'Nodes': ['openclaw.nodes.list', 'openclaw.nodes.approve'],
+    'Channels': ['openclaw.channels.status'],
+    'Security': ['openclaw.security.audit'],
+    'Devices': ['openclaw.devices.list', 'openclaw.devices.clear', 'openclaw.devices.approve'],
+  };
+
   const Console = {
-    outEl: null,
+    outputEl: null,
+    inputEl: null,
+    suggestionsEl: null,
+    history: [],
+    historyIndex: -1,
+    savedInput: '',
+    running: false,
+    tabMatches: [],
+    tabIndex: -1,
+    tabPrefix: '',
 
     init() {
-      this.outEl = $('#consoleOut');
-      $('#consoleRun')?.addEventListener('click', () => this.run());
-      
-      // Run on Enter in arg field
-      $('#consoleArg')?.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
+      this.outputEl = $('#consoleOut');
+      this.inputEl = $('#consoleInput');
+      this.suggestionsEl = $('#consoleSuggestions');
+
+      try {
+        this.history = JSON.parse(sessionStorage.getItem('console-history') || '[]');
+      } catch { this.history = []; }
+
+      if (this.inputEl) {
+        this.inputEl.addEventListener('keydown', (e) => this.handleKey(e));
+        this.inputEl.addEventListener('input', () => {
+          this.tabMatches = [];
+          this.tabIndex = -1;
+          this.updateSuggestions();
+        });
+      }
+
+      // Click on terminal focuses input
+      $('#terminalContainer')?.addEventListener('click', (e) => {
+        if (e.target.closest('.terminal-suggestions')) return;
+        this.inputEl?.focus();
+      });
+
+      this.appendInfo('OpenClaw Console \u2014 type "help" for commands, Tab to autocomplete');
+    },
+
+    handleKey(e) {
+      switch (e.key) {
+        case 'Enter':
           e.preventDefault();
           this.run();
-        }
-      });
+          break;
+        case 'Tab':
+          e.preventDefault();
+          this.autocomplete();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          this.historyBack();
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          this.historyForward();
+          break;
+        case 'Escape':
+          this.inputEl.value = '';
+          this.hideSuggestions();
+          break;
+      }
     },
 
     async run() {
-      const cmd = $('#consoleCmd')?.value;
-      const arg = $('#consoleArg')?.value || '';
-      const runBtn = $('#consoleRun');
+      const raw = (this.inputEl?.value || '').trim();
+      if (!raw || this.running) return;
 
-      if (runBtn) {
-        runBtn.disabled = true;
-        runBtn.textContent = 'Running...';
+      // Push to history (deduplicate consecutive)
+      if (this.history[this.history.length - 1] !== raw) {
+        this.history.push(raw);
+        if (this.history.length > 50) this.history.shift();
+        try { sessionStorage.setItem('console-history', JSON.stringify(this.history)); } catch {}
+      }
+      this.historyIndex = -1;
+      this.savedInput = '';
+      this.inputEl.value = '';
+      this.hideSuggestions();
+
+      this.appendCmd(raw);
+
+      // Built-in commands
+      if (raw === 'help' || raw === '?') { this.showHelp(); return; }
+      if (raw === 'clear') { this.outputEl.replaceChildren(); return; }
+
+      // Parse command and argument
+      const spaceIdx = raw.indexOf(' ');
+      const cmd = spaceIdx > -1 ? raw.substring(0, spaceIdx) : raw;
+      const arg = spaceIdx > -1 ? raw.substring(spaceIdx + 1).trim() : '';
+
+      if (!CONSOLE_COMMANDS.includes(cmd)) {
+        this.appendError('Unknown command: ' + cmd);
+        this.appendInfo('Type "help" for available commands.');
+        return;
       }
 
-      setText(this.outEl, `Running ${cmd}...`);
+      this.running = true;
+      this.appendInfo('Running...');
 
       try {
         const result = await API.post('/setup/api/console/run', { cmd, arg });
-        setText(this.outEl, result.output || JSON.stringify(result, null, 2));
-        
+        const output = result.output || JSON.stringify(result, null, 2);
         if (result.ok) {
-          Toast.success(`Command completed: ${cmd}`);
+          this.appendSuccess(output);
+        } else {
+          this.appendError(output);
         }
         Status.refresh();
       } catch (e) {
-        setText(this.outEl, `Error: ${e.message}`);
-        Toast.error(e.message, 'Command Failed');
+        this.appendError('Error: ' + e.message);
       } finally {
-        if (runBtn) {
-          runBtn.disabled = false;
-          runBtn.textContent = 'Run';
+        this.running = false;
+      }
+    },
+
+    // DOM output helpers — safe, no innerHTML
+    appendLine(text, className) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      if (className) div.className = className;
+      this.outputEl.appendChild(div);
+      this.outputEl.scrollTop = this.outputEl.scrollHeight;
+    },
+    appendCmd(text) { this.appendLine('$ ' + text, 'cmd-echo'); },
+    appendSuccess(text) { this.appendLine(text, 'cmd-success'); },
+    appendError(text) { this.appendLine(text, 'cmd-error'); },
+    appendInfo(text) { this.appendLine(text, 'cmd-info'); },
+
+    // Autocomplete with Tab cycling
+    autocomplete() {
+      const val = this.inputEl.value;
+
+      // Start new tab-completion if prefix changed
+      if (val !== this.tabPrefix || this.tabMatches.length === 0) {
+        this.tabPrefix = val;
+        this.tabMatches = CONSOLE_COMMANDS.filter(c => c.startsWith(val));
+        this.tabIndex = -1;
+      }
+
+      if (this.tabMatches.length === 0) return;
+
+      this.tabIndex = (this.tabIndex + 1) % this.tabMatches.length;
+      this.inputEl.value = this.tabMatches[this.tabIndex];
+      this.updateSuggestions();
+    },
+
+    updateSuggestions() {
+      const val = this.inputEl.value;
+      this.suggestionsEl.replaceChildren();
+
+      if (!val) {
+        this.suggestionsEl.hidden = true;
+        return;
+      }
+
+      const matches = CONSOLE_COMMANDS.filter(c => c.startsWith(val));
+      if (matches.length === 0 || (matches.length === 1 && matches[0] === val)) {
+        this.suggestionsEl.hidden = true;
+        return;
+      }
+
+      for (const cmd of matches) {
+        const div = document.createElement('div');
+        div.className = 'suggestion';
+        div.textContent = cmd;
+        if (cmd === this.inputEl.value) div.className += ' active';
+        div.addEventListener('click', () => {
+          this.inputEl.value = cmd;
+          this.hideSuggestions();
+          this.inputEl.focus();
+        });
+        this.suggestionsEl.appendChild(div);
+      }
+      this.suggestionsEl.hidden = false;
+    },
+
+    hideSuggestions() {
+      if (this.suggestionsEl) {
+        this.suggestionsEl.hidden = true;
+        this.suggestionsEl.replaceChildren();
+      }
+    },
+
+    historyBack() {
+      if (this.history.length === 0) return;
+      if (this.historyIndex === -1) {
+        this.savedInput = this.inputEl.value;
+        this.historyIndex = this.history.length - 1;
+      } else if (this.historyIndex > 0) {
+        this.historyIndex--;
+      }
+      this.inputEl.value = this.history[this.historyIndex];
+    },
+
+    historyForward() {
+      if (this.historyIndex === -1) return;
+      if (this.historyIndex < this.history.length - 1) {
+        this.historyIndex++;
+        this.inputEl.value = this.history[this.historyIndex];
+      } else {
+        this.historyIndex = -1;
+        this.inputEl.value = this.savedInput;
+      }
+    },
+
+    showHelp() {
+      this.appendInfo('Available commands:');
+      for (const [group, cmds] of Object.entries(CONSOLE_HELP)) {
+        this.appendInfo('');
+        this.appendInfo('  ' + group + ':');
+        for (const c of cmds) {
+          this.appendInfo('    ' + c);
         }
       }
-    }
+      this.appendInfo('');
+      this.appendInfo('Built-in:');
+      this.appendInfo('  help, ?     Show this help');
+      this.appendInfo('  clear       Clear terminal output');
+      this.appendInfo('');
+      this.appendInfo('Usage: command [argument]');
+      this.appendInfo('  e.g. openclaw.logs.tail 200');
+      this.appendInfo('       openclaw.config.get gateway.auth');
+    },
   };
 
   // Backup import flow.

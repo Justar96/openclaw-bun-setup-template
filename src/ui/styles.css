@@ -632,6 +632,82 @@ pre {
   min-height: 120px;
 }
 
+/* Terminal Console. */
+.terminal {
+  background: #1a1a1a;
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 12px;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-output {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 400px;
+  color: #a8e6cf;
+  padding-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.terminal-output .cmd-echo { color: #88c0d0; }
+.terminal-output .cmd-error { color: #ff6b6b; }
+.terminal-output .cmd-success { color: #a8e6cf; }
+.terminal-output .cmd-info { color: #888; }
+
+.terminal-input-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid #333;
+  padding-top: 8px;
+}
+
+.terminal-prompt {
+  color: #a8e6cf;
+  font-weight: bold;
+  user-select: none;
+}
+
+.terminal-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #e0e0e0;
+  font-family: inherit;
+  font-size: inherit;
+  caret-color: #a8e6cf;
+}
+
+.terminal-input::placeholder { color: #555; }
+
+.terminal-suggestions {
+  background: #252525;
+  border: 1px solid #333;
+  border-radius: 4px;
+  margin-top: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.terminal-suggestions .suggestion {
+  padding: 4px 8px;
+  color: #ccc;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.terminal-suggestions .suggestion.active,
+.terminal-suggestions .suggestion:hover {
+  background: #333;
+  color: #a8e6cf;
+}
+
 /* Sections. */
 .section {
   margin: 16px 0;
@@ -863,19 +939,7 @@ pre {
   margin-bottom: 16px;
 }
 
-/* Console Form. */
-.console-form {
-  display: grid;
-  gap: 16px;
-  grid-template-columns: 1fr;
-  align-items: end;
-}
-
-@media (min-width: 600px) {
-  .console-form {
-    grid-template-columns: 2fr 1fr auto;
-  }
-}
+/* Console Form (legacy — replaced by .terminal). */
 
 /* Config Path. */
 .config-path {
