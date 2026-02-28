@@ -944,6 +944,8 @@ const routes: Array<{ method: string; pattern: RegExp; handler: RouteHandler }> 
 interface WsData {
   url: string;
   headers: Record<string, string>;
+  /** Set after we inject the gateway token into the first (connect) message. */
+  connectInjected?: boolean;
 }
 
 type ServerWs = import("bun").ServerWebSocket<WsData>;
@@ -1099,11 +1101,23 @@ const server = Bun.serve<WsData>({
       const gatewayWs = wsConnections.get(ws);
       if (gatewayWs && gatewayWs.readyState === WebSocket.OPEN) {
         try {
-          if (typeof message === "string") {
-            gatewayWs.send(message);
-          } else {
-            gatewayWs.send(message);
+          // Inject gateway token into the first (connect) message so the gateway
+          // sees it as shared auth. Without this, shouldSkipControlUiPairing()
+          // returns false because sharedAuthOk requires auth.token in the
+          // protocol-level connect message, not just the HTTP Authorization header.
+          if (typeof message === "string" && !ws.data.connectInjected) {
+            ws.data.connectInjected = true;
+            try {
+              const parsed = JSON.parse(message);
+              if (parsed && typeof parsed === "object" && "client" in parsed) {
+                parsed.auth = { ...parsed.auth, token: OPENCLAW_GATEWAY_TOKEN };
+                message = JSON.stringify(parsed);
+              }
+            } catch {
+              // Not valid JSON — pass through unchanged.
+            }
           }
+          gatewayWs.send(message);
         } catch (err) {
           console.error("[ws-proxy] send error:", err);
         }
